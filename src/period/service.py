@@ -2,6 +2,7 @@ import re
 from datetime import date
 
 from src.core.enums import PeriodType
+from src.core.llm_client import LLMClient
 from src.core.schemas import PeriodResult
 
 QUARTER_END_MONTHS = {1: 3, 2: 6, 3: 9, 4: 12}
@@ -58,7 +59,18 @@ def _quarter_end_date(quarter: int, year: int) -> date:
     return date(year, m, d)
 
 
+PERIOD_TYPE_MAP = {
+    "QUARTER": PeriodType.QUARTER,
+    "HALF": PeriodType.HALF,
+    "YTD": PeriodType.YTD,
+    "FULL_YEAR": PeriodType.FULL_YEAR,
+}
+
+
 class PeriodNormalizer:
+    def __init__(self, llm_client: LLMClient | None = None):
+        self.llm_client = llm_client
+
     def normalize(self, raw_period: str) -> PeriodResult:
         text = str(raw_period).strip()
 
@@ -172,6 +184,19 @@ class PeriodNormalizer:
                 period_end_date=date(y, 12, 31),
                 confidence=0.5,
             )
+
+        if self.llm_client:
+            llm_result = self.llm_client.normalize_period(text)
+            if llm_result and llm_result.period and llm_result.period_type:
+                pt = PERIOD_TYPE_MAP.get(llm_result.period_type)
+                if pt:
+                    return PeriodResult(
+                        raw_period=text,
+                        normalized_period=llm_result.period,
+                        period_type=pt,
+                        period_end_date=None,
+                        confidence=llm_result.confidence * 0.8,
+                    )
 
         return PeriodResult(
             raw_period=text,

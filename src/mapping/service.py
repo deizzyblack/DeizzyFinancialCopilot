@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from sqlalchemy.orm import Session
 
 from src.core.enums import MappingMethod, StandardMetric
+from src.core.llm_client import LLMClient
 from src.core.schemas import MappingResult
 from src.models.database import MappingMemory
 
@@ -44,8 +45,9 @@ SYNONYM_MAP: dict[str, StandardMetric] = {
 
 
 class SemanticMapper:
-    def __init__(self, session: Session):
+    def __init__(self, session: Session, llm_client: LLMClient | None = None):
         self.session = session
+        self.llm_client = llm_client
 
     def add_company_mapping(
         self, company_id: str, label: str, metric: StandardMetric
@@ -162,6 +164,21 @@ class SemanticMapper:
                     method=MappingMethod.RULE_BASED,
                     reason=f"Partial match: {raw_label} ~ {synonym} -> {metric.value}",
                 )
+
+        if self.llm_client:
+            llm_result = self.llm_client.map_metric(raw_label)
+            if llm_result and llm_result.metric:
+                try:
+                    metric = StandardMetric(llm_result.metric)
+                except ValueError:
+                    metric = None
+                if metric:
+                    return MappingResult(
+                        metric=metric,
+                        mapping_score=llm_result.confidence * 0.8,
+                        method=MappingMethod.LLM_FALLBACK,
+                        reason=f"LLM fallback: {raw_label} -> {metric.value}",
+                    )
 
         return MappingResult(
             metric=None,

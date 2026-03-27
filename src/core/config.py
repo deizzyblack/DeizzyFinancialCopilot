@@ -9,6 +9,12 @@ class Settings(BaseSettings):
     auto_approve_threshold: float = 0.85
     review_threshold: float = 0.5
 
+    llm_enabled: bool = False
+    llm_api_url: str = ""
+    llm_api_key: str = ""
+    llm_model: str = "claude-haiku-4-5-20251001"
+    llm_timeout_seconds: int = 10
+
     model_config = {"env_prefix": "FDA_"}
 
 
