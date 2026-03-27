@@ -2,19 +2,22 @@ import hashlib
 import mimetypes
 import shutil
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
+from sqlalchemy.orm import Session
+
 from src.core.config import settings
-from src.core.enums import AuditEventType, FileStatus
+from src.core.enums import FileStatus
 from src.core.schemas import FileMetadata
+from src.models.database import FileRecord
 
 
 class IngestionService:
-    def __init__(self, upload_dir: str | None = None):
+    def __init__(self, session: Session, upload_dir: str | None = None):
+        self.session = session
         self.upload_dir = Path(upload_dir or settings.upload_dir)
         self.upload_dir.mkdir(parents=True, exist_ok=True)
-        self._known_hashes: dict[str, str] = {}
 
     def compute_hash(self, file_path: Path) -> str:
         sha256 = hashlib.sha256()
@@ -33,32 +36,65 @@ class IngestionService:
 
         file_hash = self.compute_hash(file_path)
         file_id = uuid.uuid4()
+        now = datetime.now(UTC)
+        size = file_path.stat().st_size
+        mime = mimetypes.guess_type(file_path.name)[0] or "application/octet-stream"
 
-        if file_hash in self._known_hashes:
+        existing = (
+            self.session.query(FileRecord)
+            .filter(FileRecord.file_hash == file_hash)
+            .first()
+        )
+
+        if existing:
+            dup_row = FileRecord(
+                id=str(file_id),
+                file_hash=file_hash,
+                filename=file_path.name,
+                size_bytes=size,
+                mime_type=mime,
+                uploaded_by=uploaded_by,
+                uploaded_at=now,
+                status=FileStatus.DUPLICATE.value,
+            )
+            self.session.add(dup_row)
+            self.session.flush()
+
             return FileMetadata(
                 file_id=file_id,
                 file_hash=file_hash,
                 filename=file_path.name,
-                size_bytes=file_path.stat().st_size,
-                mime_type=mimetypes.guess_type(file_path.name)[0] or "application/octet-stream",
+                size_bytes=size,
+                mime_type=mime,
                 uploaded_by=uploaded_by,
-                uploaded_at=datetime.now(timezone.utc),
+                uploaded_at=now,
                 status=FileStatus.DUPLICATE,
             )
 
         dest = self.upload_dir / f"{file_id}_{file_path.name}"
         shutil.copy2(file_path, dest)
 
-        self._known_hashes[file_hash] = str(file_id)
+        row = FileRecord(
+            id=str(file_id),
+            file_hash=file_hash,
+            filename=file_path.name,
+            size_bytes=size,
+            mime_type=mime,
+            uploaded_by=uploaded_by,
+            uploaded_at=now,
+            status=FileStatus.NEW.value,
+        )
+        self.session.add(row)
+        self.session.flush()
 
         return FileMetadata(
             file_id=file_id,
             file_hash=file_hash,
             filename=file_path.name,
-            size_bytes=file_path.stat().st_size,
-            mime_type=mimetypes.guess_type(file_path.name)[0] or "application/octet-stream",
+            size_bytes=size,
+            mime_type=mime,
             uploaded_by=uploaded_by,
-            uploaded_at=datetime.now(timezone.utc),
+            uploaded_at=now,
             status=FileStatus.NEW,
         )
 

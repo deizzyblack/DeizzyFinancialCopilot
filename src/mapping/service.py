@@ -1,5 +1,8 @@
+from sqlalchemy.orm import Session
+
 from src.core.enums import MappingMethod, StandardMetric
 from src.core.schemas import MappingResult
+from src.models.database import MappingMemory
 
 SYNONYM_MAP: dict[str, StandardMetric] = {
     "revenue": StandardMetric.REVENUE,
@@ -39,27 +42,61 @@ SYNONYM_MAP: dict[str, StandardMetric] = {
 
 
 class SemanticMapper:
-    def __init__(self):
-        self._company_mappings: dict[tuple[str, str], MappingResult] = {}
+    def __init__(self, session: Session):
+        self.session = session
 
     def add_company_mapping(
         self, company_id: str, label: str, metric: StandardMetric
     ) -> None:
-        key = (company_id, label.lower().strip())
-        self._company_mappings[key] = MappingResult(
-            metric=metric,
-            mapping_score=1.0,
-            method=MappingMethod.COMPANY_APPROVED,
-            reason=f"Company-approved mapping: {label} -> {metric.value}",
+        normalized = label.lower().strip()
+
+        existing = (
+            self.session.query(MappingMemory)
+            .filter(
+                MappingMemory.company_id == company_id,
+                MappingMemory.original_label == normalized,
+            )
+            .first()
         )
+
+        if existing:
+            existing.mapped_metric = metric.value
+            existing.approved = "true"
+        else:
+            row = MappingMemory(
+                company_id=company_id,
+                original_label=normalized,
+                mapped_metric=metric.value,
+                approved="true",
+            )
+            self.session.add(row)
+
+        self.session.flush()
 
     def map_label(self, raw_label: str, company_id: str | None = None) -> MappingResult:
         normalized = raw_label.lower().strip()
 
         if company_id:
-            key = (company_id, normalized)
-            if key in self._company_mappings:
-                return self._company_mappings[key]
+            row = (
+                self.session.query(MappingMemory)
+                .filter(
+                    MappingMemory.company_id == company_id,
+                    MappingMemory.original_label == normalized,
+                )
+                .first()
+            )
+            if row:
+                try:
+                    metric = StandardMetric(row.mapped_metric)
+                except ValueError:
+                    metric = None
+                if metric:
+                    return MappingResult(
+                        metric=metric,
+                        mapping_score=1.0,
+                        method=MappingMethod.COMPANY_APPROVED,
+                        reason=f"Company-approved mapping: {raw_label} -> {metric.value}",
+                    )
 
         if normalized in SYNONYM_MAP:
             metric = SYNONYM_MAP[normalized]

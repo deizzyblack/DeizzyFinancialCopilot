@@ -1,5 +1,6 @@
-import uuid
 from pathlib import Path
+
+from sqlalchemy.orm import Session
 
 from src.action.service import ActionGenerator
 from src.audit.service import AuditService
@@ -19,20 +20,21 @@ from src.storage.service import StorageService
 
 
 class Pipeline:
-    def __init__(self):
-        self.ingestion = IngestionService()
+    def __init__(self, session: Session, upload_dir: str | None = None):
+        self.session = session
+        self.ingestion = IngestionService(session, upload_dir=upload_dir)
         self.parser = DocumentParser()
-        self.mapper = SemanticMapper()
+        self.mapper = SemanticMapper(session)
         self.period_normalizer = PeriodNormalizer()
         self.normalizer = NormalizationService()
-        self.storage = StorageService()
+        self.storage = StorageService(session)
         self.change_detector = ChangeDetectionService(self.storage)
         self.sanity = SanityEngine(self.storage)
         self.source_reliability = SourceReliabilityService()
         self.confidence = ConfidenceEngine()
         self.decision = DecisionEngine()
         self.action_generator = ActionGenerator()
-        self.audit = AuditService()
+        self.audit = AuditService(session)
 
     def process_file(
         self,
@@ -58,6 +60,7 @@ class Pipeline:
                 file_id=file_meta.file_id,
                 details={"hash": file_meta.file_hash},
             )
+            self.session.commit()
             return PipelineResult(
                 file_id=file_meta.file_id,
                 status="DUPLICATE",
@@ -69,6 +72,7 @@ class Pipeline:
             extractions = self.parser.parse_excel(stored_path)
         except Exception as e:
             errors.append(f"Parse error: {e}")
+            self.session.commit()
             return PipelineResult(
                 file_id=file_meta.file_id,
                 status="FAILED",
@@ -180,6 +184,8 @@ class Pipeline:
                 record_id=stored.record_id,
                 details={"action": action.action.value, "reason": action.reason},
             )
+
+        self.session.commit()
 
         return PipelineResult(
             file_id=file_meta.file_id,
