@@ -7,7 +7,7 @@ from src.audit.service import AuditService
 from src.change_detection.service import ChangeDetectionService
 from src.confidence.service import ConfidenceEngine
 from src.core.enums import AuditEventType, FileStatus
-from src.core.schemas import ActionRecommendation, PipelineResult
+from src.core.schemas import ActionRecommendation, PipelineResult, RecordOutcome
 from src.decision.service import DecisionEngine
 from src.ingestion.service import IngestionService
 from src.mapping.service import SemanticMapper
@@ -45,6 +45,7 @@ class Pipeline:
     ) -> PipelineResult:
         errors = []
         actions: list[ActionRecommendation] = []
+        outcomes: list[RecordOutcome] = []
 
         # M1 — Ingest
         file_meta = self.ingestion.ingest_file(file_path, uploaded_by)
@@ -185,13 +186,48 @@ class Pipeline:
                 details={"action": action.action.value, "reason": action.reason},
             )
 
+            # Persist pipeline metadata on the record
+            self.storage.update_pipeline_metadata(
+                stored.record_id,
+                mapping_method=mapping.method.value,
+                mapping_reason=mapping.reason,
+                raw_period=period.raw_period,
+                confidence_total=conf.total,
+                confidence_extraction=conf.extraction,
+                confidence_mapping=conf.mapping,
+                confidence_sanity=conf.sanity,
+                confidence_source=conf.source,
+                confidence_historical=conf.historical,
+                decision=decision.decision.value,
+                decision_reason=decision.reason,
+                sanity_passed=sanity_result.passed,
+                sanity_issues=sanity_result.issues,
+                change_type=change.change_type.value,
+                previous_value=change.old_value,
+                source_filename=file_meta.filename,
+            )
+
+            outcomes.append(
+                RecordOutcome(
+                    record_id=stored.record_id,
+                    metric=record.metric.value if record.metric else None,
+                    value=record.value,
+                    period=record.period,
+                    confidence=conf.total,
+                    decision=decision.decision.value,
+                    reason=decision.reason,
+                )
+            )
+
         self.session.commit()
 
         return PipelineResult(
             file_id=file_meta.file_id,
+            filename=file_meta.filename,
             status="COMPLETED",
             records_extracted=len(extractions),
             records_created=records_created,
+            outcomes=outcomes,
             actions=actions,
             errors=errors,
         )

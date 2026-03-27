@@ -1,3 +1,4 @@
+import json
 import uuid
 from datetime import UTC, datetime
 
@@ -137,6 +138,99 @@ class StorageService:
             .all()
         )
         return [StorageRecord(r) for r in rows]
+
+    def get_by_id(self, record_id: uuid.UUID) -> StorageRecord | None:
+        row = (
+            self.session.query(FinancialRecord)
+            .filter(FinancialRecord.id == str(record_id))
+            .first()
+        )
+        return StorageRecord(row) if row else None
+
+    def update_pipeline_metadata(
+        self,
+        record_id: uuid.UUID,
+        *,
+        mapping_method: str | None = None,
+        mapping_reason: str | None = None,
+        raw_period: str | None = None,
+        confidence_total: float | None = None,
+        confidence_extraction: float | None = None,
+        confidence_mapping: float | None = None,
+        confidence_sanity: float | None = None,
+        confidence_source: float | None = None,
+        confidence_historical: float | None = None,
+        decision: str | None = None,
+        decision_reason: str | None = None,
+        sanity_passed: bool | None = None,
+        sanity_issues: list[str] | None = None,
+        change_type: str | None = None,
+        previous_value: float | None = None,
+        source_filename: str | None = None,
+    ) -> None:
+        row = (
+            self.session.query(FinancialRecord)
+            .filter(FinancialRecord.id == str(record_id))
+            .first()
+        )
+        if not row:
+            return
+
+        if mapping_method is not None:
+            row.mapping_method = mapping_method
+        if mapping_reason is not None:
+            row.mapping_reason = mapping_reason
+        if raw_period is not None:
+            row.raw_period = raw_period
+        if confidence_total is not None:
+            row.confidence_total = confidence_total
+        if confidence_extraction is not None:
+            row.confidence_extraction = confidence_extraction
+        if confidence_mapping is not None:
+            row.confidence_mapping = confidence_mapping
+        if confidence_sanity is not None:
+            row.confidence_sanity = confidence_sanity
+        if confidence_source is not None:
+            row.confidence_source = confidence_source
+        if confidence_historical is not None:
+            row.confidence_historical = confidence_historical
+        if decision is not None:
+            row.decision = decision
+        if decision_reason is not None:
+            row.decision_reason = decision_reason
+        if sanity_passed is not None:
+            row.sanity_passed = "true" if sanity_passed else "false"
+        if sanity_issues is not None:
+            row.sanity_issues_json = json.dumps(sanity_issues)
+        if change_type is not None:
+            row.change_type = change_type
+        if previous_value is not None:
+            row.previous_value = previous_value
+        if source_filename is not None:
+            row.source_filename = source_filename
+
+        self.session.flush()
+
+    def get_pending_filtered(
+        self,
+        decision_filter: str | None = None,
+        page: int = 1,
+        per_page: int = 50,
+    ) -> tuple[list[StorageRecord], int]:
+        query = self.session.query(FinancialRecord).filter(
+            FinancialRecord.status == RecordStatus.PENDING.value
+        )
+        if decision_filter:
+            query = query.filter(FinancialRecord.decision == decision_filter)
+
+        total = query.count()
+        rows = (
+            query.order_by(FinancialRecord.confidence_total.asc())
+            .offset((page - 1) * per_page)
+            .limit(per_page)
+            .all()
+        )
+        return [StorageRecord(r) for r in rows], total
 
     def _next_version(self, company_id: str, metric: str, period: str) -> int:
         count = self.get_revision_count(company_id, metric, period)

@@ -112,10 +112,22 @@ class AuditEntry(BaseModel):
     details: dict[str, Any] = {}
 
 
+class RecordOutcome(BaseModel):
+    record_id: UUID
+    metric: str | None = None
+    value: float = 0.0
+    period: str = ""
+    confidence: float = 0.0
+    decision: str = ""
+    reason: str = ""
+
+
 class PipelineResult(BaseModel):
     file_id: UUID
+    filename: str = ""
     status: str
     records_extracted: int = 0
     records_created: int = 0
+    outcomes: list[RecordOutcome] = []
     actions: list[ActionRecommendation] = []
     errors: list[str] = []

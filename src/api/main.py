@@ -1,21 +1,30 @@
+import json
 import shutil
 import tempfile
 from pathlib import Path
 from uuid import UUID
 
 from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
 from src.api.pipeline import Pipeline
 from src.core.enums import UserAction
 from src.core.schemas import PipelineResult
 from src.execution.service import ExecutionService
-from src.models.database import Base, get_engine, get_session_factory
+from src.models.database import AuditLog, Base, get_engine, get_session_factory
 
 app = FastAPI(
     title="Financial Data Autopilot",
     description="Ingests, validates, and acts on financial data with controlled automation",
     version="0.1.0",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 engine = get_engine()
@@ -92,24 +101,110 @@ def execute_action(
 
 
 @app.get("/records/pending")
-def get_pending_records(db: Session = Depends(get_db)):
+def get_pending_records(
+    decision: str | None = Query(None, description="Filter: AUTO_READY, REVIEW_REQUIRED, FLAG"),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+):
     from src.storage.service import StorageService
 
     storage = StorageService(db)
-    records = storage.get_all_pending()
-    return [
-        {
-            "record_id": str(r.record_id),
-            "company_id": r.record.company_id,
-            "metric": r.record.metric.value,
-            "value": r.record.value,
-            "period": r.record.period,
-            "status": r.status.value,
-            "version": r.version,
-            "created_at": r.created_at.isoformat(),
-        }
-        for r in records
-    ]
+    records, total = storage.get_pending_filtered(decision, page, per_page)
+
+    return {
+        "records": [
+            {
+                "record_id": str(r.record_id),
+                "company_id": r.record.company_id,
+                "metric": r.record.metric.value if r.record.metric else None,
+                "value": r.record.value,
+                "normalized_period": r.record.period,
+                "confidence": r._row.confidence_total or 0.0,
+                "decision": r._row.decision or "",
+                "reason": r._row.decision_reason or "",
+                "source_file": r._row.source_filename or "",
+                "status": r.status.value,
+                "version": r.version,
+                "created_at": r.created_at.isoformat() if r.created_at else "",
+            }
+            for r in records
+        ],
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+    }
+
+
+@app.get("/records/{record_id}")
+def get_record_detail(
+    record_id: UUID,
+    db: Session = Depends(get_db),
+):
+    from src.storage.service import StorageService
+
+    storage = StorageService(db)
+    sr = storage.get_by_id(record_id)
+    if not sr:
+        raise HTTPException(status_code=404, detail="Record not found")
+
+    row = sr._row
+    sanity_issues = []
+    if row.sanity_issues_json:
+        try:
+            sanity_issues = json.loads(row.sanity_issues_json)
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    previous_value = row.previous_value
+    delta = None
+    delta_percent = None
+    if previous_value is not None and row.value:
+        delta = row.value - previous_value
+        if previous_value != 0:
+            delta_percent = round((delta / previous_value) * 100, 2)
+
+    return {
+        "record_id": str(sr.record_id),
+        "company_id": row.company_id,
+        "status": row.status,
+        "version": row.version,
+        # Data
+        "metric": row.metric,
+        "value": row.value,
+        "normalized_period": row.period,
+        # Source traceability
+        "source_file": row.source_filename or "",
+        "sheet_name": row.sheet or "",
+        "cell_reference": row.cell or "",
+        "raw_label": row.raw_label or "",
+        "mapped_metric": row.metric,
+        "mapping_method": row.mapping_method or "",
+        "mapping_reason": row.mapping_reason or "",
+        "raw_period": row.raw_period or "",
+        "period_type": row.period_type or "",
+        # Confidence
+        "confidence_total": row.confidence_total or 0.0,
+        "confidence_breakdown": {
+            "extraction": row.confidence_extraction or 0.0,
+            "mapping": row.confidence_mapping or 0.0,
+            "sanity": row.confidence_sanity or 0.0,
+            "source": row.confidence_source or 0.0,
+            "historical": row.confidence_historical or 0.0,
+        },
+        # Sanity
+        "sanity_passed": row.sanity_passed == "true" if row.sanity_passed else True,
+        "sanity_issues": sanity_issues,
+        # Change detection
+        "change_type": row.change_type or "NEW",
+        "previous_value": previous_value,
+        "delta": delta,
+        "delta_percent": delta_percent,
+        # Decision
+        "decision": row.decision or "",
+        "decision_reason": row.decision_reason or "",
+        "created_at": row.created_at.isoformat() if row.created_at else "",
+    }
 
 
 @app.get("/audit")
@@ -117,20 +212,40 @@ def get_audit_log(
     file_id: UUID | None = None,
     record_id: UUID | None = None,
     event_type: str | None = None,
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
 ):
-    from src.audit.service import AuditService
+    query = db.query(AuditLog)
 
-    audit = AuditService(db)
-    entries = audit.get_log(file_id, record_id, event_type)
-    return [
-        {
-            "event_type": e.event_type,
-            "timestamp": e.timestamp.isoformat(),
-            "file_id": str(e.file_id) if e.file_id else None,
-            "record_id": str(e.record_id) if e.record_id else None,
-            "actor": e.actor,
-            "details": e.details,
-        }
-        for e in entries
-    ]
+    if file_id:
+        query = query.filter(AuditLog.file_id == str(file_id))
+    if record_id:
+        query = query.filter(AuditLog.record_id == str(record_id))
+    if event_type:
+        query = query.filter(AuditLog.event_type == event_type)
+
+    total = query.count()
+    rows = (
+        query.order_by(AuditLog.timestamp.desc())
+        .offset((page - 1) * per_page)
+        .limit(per_page)
+        .all()
+    )
+
+    return {
+        "entries": [
+            {
+                "id": row.id,
+                "event_type": row.event_type,
+                "timestamp": row.timestamp.isoformat() if row.timestamp else "",
+                "file_id": row.file_id,
+                "record_id": row.record_id,
+                "details": row.details,
+            }
+            for row in rows
+        ],
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+    }
