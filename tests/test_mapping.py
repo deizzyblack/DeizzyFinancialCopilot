@@ -32,7 +32,7 @@ class TestSemanticMapper:
         mapper.add_company_mapping("ACME", "Umsatz", StandardMetric.REVENUE)
         result = mapper.map_label("Umsatz", company_id="ACME")
         assert result.metric == StandardMetric.REVENUE
-        assert result.mapping_score == 1.0
+        assert result.mapping_score >= 0.95  # scales with approval count
         assert result.method == MappingMethod.COMPANY_APPROVED
 
     def test_company_mapping_priority(self, db_session):

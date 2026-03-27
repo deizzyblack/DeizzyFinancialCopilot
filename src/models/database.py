@@ -61,8 +61,11 @@ class MappingMemory(Base):
     company_id = Column(String(100), nullable=False, index=True)
     original_label = Column(String(500), nullable=False)
     mapped_metric = Column(String(50), nullable=False)
-    approved = Column(String(5), default="false")
+    approved = Column(String(10), default="false")
+    approve_count = Column(Integer, default=0)
+    reject_count = Column(Integer, default=0)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
 
 class AuditLog(Base):

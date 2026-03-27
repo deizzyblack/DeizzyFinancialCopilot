@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 from sqlalchemy.orm import Session
 
 from src.core.enums import MappingMethod, StandardMetric
@@ -55,19 +57,56 @@ class SemanticMapper:
             .filter(
                 MappingMemory.company_id == company_id,
                 MappingMemory.original_label == normalized,
+                MappingMemory.mapped_metric == metric.value,
             )
             .first()
         )
 
         if existing:
-            existing.mapped_metric = metric.value
             existing.approved = "true"
+            existing.approve_count = (existing.approve_count or 0) + 1
+            existing.updated_at = datetime.now(UTC)
         else:
             row = MappingMemory(
                 company_id=company_id,
                 original_label=normalized,
                 mapped_metric=metric.value,
                 approved="true",
+                approve_count=1,
+                reject_count=0,
+            )
+            self.session.add(row)
+
+        self.session.flush()
+
+    def reject_mapping(
+        self, company_id: str, label: str, metric: StandardMetric
+    ) -> None:
+        """Record a rejected mapping as a negative signal. Append-only."""
+        normalized = label.lower().strip()
+
+        existing = (
+            self.session.query(MappingMemory)
+            .filter(
+                MappingMemory.company_id == company_id,
+                MappingMemory.original_label == normalized,
+                MappingMemory.mapped_metric == metric.value,
+            )
+            .first()
+        )
+
+        if existing:
+            existing.approved = "rejected"
+            existing.reject_count = (existing.reject_count or 0) + 1
+            existing.updated_at = datetime.now(UTC)
+        else:
+            row = MappingMemory(
+                company_id=company_id,
+                original_label=normalized,
+                mapped_metric=metric.value,
+                approved="rejected",
+                approve_count=0,
+                reject_count=1,
             )
             self.session.add(row)
 
@@ -82,7 +121,9 @@ class SemanticMapper:
                 .filter(
                     MappingMemory.company_id == company_id,
                     MappingMemory.original_label == normalized,
+                    MappingMemory.approved != "rejected",
                 )
+                .order_by(MappingMemory.approve_count.desc())
                 .first()
             )
             if row:
@@ -91,27 +132,33 @@ class SemanticMapper:
                 except ValueError:
                     metric = None
                 if metric:
+                    score = self._approval_score(row)
                     return MappingResult(
                         metric=metric,
-                        mapping_score=1.0,
+                        mapping_score=score,
                         method=MappingMethod.COMPANY_APPROVED,
-                        reason=f"Company-approved mapping: {raw_label} -> {metric.value}",
+                        reason=(
+                            f"Company-approved mapping: {raw_label} -> {metric.value} "
+                            f"(approved {row.approve_count or 0}x)"
+                        ),
                     )
 
         if normalized in SYNONYM_MAP:
             metric = SYNONYM_MAP[normalized]
+            boost = self._rule_boost(normalized, metric, company_id)
             return MappingResult(
                 metric=metric,
-                mapping_score=0.95,
+                mapping_score=min(0.95 + boost, 1.0),
                 method=MappingMethod.RULE_BASED,
                 reason=f"Rule-based synonym: {raw_label} -> {metric.value}",
             )
 
         for synonym, metric in SYNONYM_MAP.items():
             if synonym in normalized or normalized in synonym:
+                boost = self._rule_boost(normalized, metric, company_id)
                 return MappingResult(
                     metric=metric,
-                    mapping_score=0.75,
+                    mapping_score=min(0.75 + boost, 1.0),
                     method=MappingMethod.RULE_BASED,
                     reason=f"Partial match: {raw_label} ~ {synonym} -> {metric.value}",
                 )
@@ -122,3 +169,34 @@ class SemanticMapper:
             method=MappingMethod.RULE_BASED,
             reason=f"No mapping found for: {raw_label}",
         )
+
+    def _approval_score(self, row: MappingMemory) -> float:
+        """Score based on approval history. More approvals → higher confidence."""
+        approvals = row.approve_count or 0
+        if approvals >= 3:
+            return 1.0
+        if approvals >= 1:
+            return 0.95
+        return 0.85
+
+    def _rule_boost(
+        self, label: str, metric: StandardMetric, company_id: str | None
+    ) -> float:
+        """Boost rule-based score if prior approvals exist for this label→metric."""
+        if not company_id:
+            return 0.0
+
+        row = (
+            self.session.query(MappingMemory)
+            .filter(
+                MappingMemory.company_id == company_id,
+                MappingMemory.original_label == label,
+                MappingMemory.mapped_metric == metric.value,
+                MappingMemory.approved == "true",
+            )
+            .first()
+        )
+
+        if row and (row.approve_count or 0) > 0:
+            return 0.05
+        return 0.0

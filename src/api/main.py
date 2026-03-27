@@ -69,10 +69,12 @@ def execute_action(
     db: Session = Depends(get_db),
 ):
     from src.audit.service import AuditService
+    from src.mapping.service import SemanticMapper
     from src.storage.service import StorageService
 
     storage = StorageService(db)
-    execution = ExecutionService(storage)
+    mapper = SemanticMapper(db)
+    execution = ExecutionService(storage, mapper)
     audit = AuditService(db)
 
     result = execution.execute(record_id, action)
