@@ -127,7 +127,13 @@ export function AuditLog() {
               </div>
             ))}
             {data.entries.length === 0 && (
-              <div className="empty">No audit entries found</div>
+              <div className="card empty-state">
+                <p>No audit events yet.</p>
+                <p className="help-text">
+                  <Link to="/">Process a file</Link> to see the audit trail, or clear
+                  the filters above.
+                </p>
+              </div>
             )}
           </div>
 

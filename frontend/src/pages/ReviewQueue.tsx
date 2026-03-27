@@ -13,6 +13,10 @@ const FILTER_LABELS: Record<string, string> = {
   AUTO_READY: "Auto-Ready",
 };
 
+function fmt(n: number): string {
+  return n.toLocaleString("en-US", { maximumFractionDigits: 0 });
+}
+
 export function ReviewQueue() {
   const [data, setData] = useState<PaginatedRecords | null>(null);
   const [filter, setFilter] = useState("");
@@ -27,10 +31,6 @@ export function ReviewQueue() {
   }, [filter, page]);
 
   const totalPages = data ? Math.ceil(data.total / data.per_page) : 0;
-
-  function fmt(n: number): string {
-    return n.toLocaleString("en-US", { maximumFractionDigits: 0 });
-  }
 
   return (
     <div className="page">
@@ -54,7 +54,16 @@ export function ReviewQueue() {
 
       {error && <div className="error-box">{error}</div>}
 
-      {data && (
+      {data && data.records.length === 0 && (
+        <div className="card empty-state">
+          <p>No records to review.</p>
+          <p className="help-text">
+            <Link to="/">Upload a file</Link> to get started, or change the filter above.
+          </p>
+        </div>
+      )}
+
+      {data && data.records.length > 0 && (
         <>
           <table className="data-table">
             <thead>
@@ -88,13 +97,6 @@ export function ReviewQueue() {
                   <td className="reason-cell">{r.reason || "-"}</td>
                 </tr>
               ))}
-              {data.records.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="empty">
-                    No pending records
-                  </td>
-                </tr>
-              )}
             </tbody>
           </table>
 

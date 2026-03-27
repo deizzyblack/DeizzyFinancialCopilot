@@ -41,6 +41,26 @@ export function UploadPage() {
     ...(grouped?.REVIEW_REQUIRED ?? []),
   ];
 
+  const autoCount = grouped?.AUTO_READY?.length ?? 0;
+  const reviewCount = grouped?.REVIEW_REQUIRED?.length ?? 0;
+  const flagCount = grouped?.FLAG?.length ?? 0;
+
+  function nextStepMessage(): string {
+    if (!result || result.status !== "COMPLETED") return "";
+    if (result.records_created === 0) return "No financial records found in this file.";
+    const parts: string[] = [];
+    if (autoCount > 0) parts.push(`${autoCount} record${autoCount > 1 ? "s are" : " is"} auto-ready and awaiting approval`);
+    if (reviewCount > 0) parts.push(`${reviewCount} record${reviewCount > 1 ? "s need" : " needs"} your review`);
+    if (flagCount > 0) parts.push(`${flagCount} record${flagCount > 1 ? "s are" : " is"} flagged with issues`);
+    return parts.join(". ") + ".";
+  }
+
+  function ctaLabel(): string {
+    if (flagCount > 0) return "Review flagged records";
+    if (reviewCount > 0) return "Review records";
+    return "Review and approve records";
+  }
+
   return (
     <div className="page">
       <h1>Upload Financial Data</h1>
@@ -121,10 +141,20 @@ export function UploadPage() {
                 </div>
               )}
 
-              <Link to="/review" className="btn">
-                Go to Review Queue
-              </Link>
+              <div className="next-step-box">
+                <p>{nextStepMessage()}</p>
+                <Link to="/review" className="btn">
+                  {ctaLabel()}
+                </Link>
+              </div>
             </>
+          )}
+
+          {result.status === "DUPLICATE" && (
+            <p className="help-text">
+              This file has already been processed. Upload a different file or check the{" "}
+              <Link to="/audit">audit trail</Link> for details.
+            </p>
           )}
 
           {result.errors.length > 0 && (

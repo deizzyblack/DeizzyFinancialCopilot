@@ -50,8 +50,20 @@ export function RecordDetail() {
 
       <div className="detail-header">
         <h1>Record Detail</h1>
-        <StatusBadge label={rec.status} />
-        {rec.decision && <StatusBadge label={rec.decision} />}
+        <div className="header-badges">
+          <span className="badge-group">
+            <span className="badge-label">Status</span>
+            <StatusBadge label={rec.status} />
+          </span>
+          {rec.decision && (
+            <span className="badge-group">
+              <span className="badge-label">Recommendation</span>
+              <span className="decision-badge-outline" data-decision={rec.decision}>
+                {rec.decision.replace("_", " ")}
+              </span>
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Data section */}
@@ -135,9 +147,6 @@ export function RecordDetail() {
           <ConfidenceBar value={cb.historical} label="Historical" />
           <div className="confidence-total">
             <strong>TOTAL: {rec.confidence_total.toFixed(2)}</strong>
-            {rec.decision && (
-              <StatusBadge label={rec.decision} />
-            )}
           </div>
         </div>
       </div>
