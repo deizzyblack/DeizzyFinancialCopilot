@@ -218,6 +218,7 @@ class TestRealWorkbook:
         print("\n=== REAL WORKBOOK ANALYSIS ===")
         print(f"Latest period: {d['latest_period']}")
         print(f"Previous period: {d['previous_period']}")
+        print(f"Period type mismatch: {d['period_type_mismatch']}")
         print(f"Periods ({len(d['periods_available'])}): "
               f"{d['periods_available'][:10]}")
         if len(d["periods_available"]) > 10:
@@ -234,14 +235,26 @@ class TestRealWorkbook:
         for c in d["comparisons"]:
             prev = c["previous_value"]
             delta = c["delta_percent"]
+            warn = " [!]" if c.get("comparison_warning") else ""
             print(f"  {c['metric']}: {prev} -> {c['current_value']} "
-                  f"({delta}% | {c['severity']})")
-        print(f"\nAnomalies ({d['anomaly_count']}):")
-        for a in d["anomalies"][:15]:
+                  f"({delta}% | {c['severity']}){warn}")
+        if d["comparisons"] and d["comparisons"][0].get("comparison_warning"):
+            print(f"  Warning: {d['comparisons'][0]['comparison_warning']}")
+        print(f"\nAnomalies total: {d['anomaly_count']}")
+        print(f"Aggregated groups: {len(d['aggregated_anomalies'])}")
+        for ag in d["aggregated_anomalies"][:10]:
+            print(f"  [{ag['severity']}|{ag['kind']}] {ag['count']}x: "
+                  f"{ag['issue']}")
+            print(f"    metrics: {ag['metrics'][:5]}, "
+                  f"periods: {ag['periods'][:5]}")
+        if len(d["aggregated_anomalies"]) > 10:
+            print(f"  ... +{len(d['aggregated_anomalies']) - 10} more groups")
+        print(f"\nRaw anomalies (first 5):")
+        for a in d["anomalies"][:5]:
             print(f"  [{a['severity']}|{a['kind']}] {a['metric']} "
                   f"{a['period']}: {a['issue']}")
-        if d["anomaly_count"] > 15:
-            print(f"  ... +{d['anomaly_count'] - 15} more")
+        if d["anomaly_count"] > 5:
+            print(f"  ... +{d['anomaly_count'] - 5} more")
         print(f"\nMissing ({d['missing_count']}):")
         for m in d["missing"]:
             print(f"  [{m['type']}] {m['metric']}: {m['reason']}")

@@ -439,6 +439,151 @@ class TestTrustAssessment:
             assert _trust_label(score) == expected
 
 
+class TestAggregatedAnomalies:
+    def test_aggregation_groups_by_issue(self, db_session):
+        """Multiple records with similar sanity issues get grouped."""
+        for period in ("Q1-2025", "Q2-2025", "Q3-2025"):
+            _make_record(
+                db_session, metric="EBITDA", value=2000, period=period,
+                sanity_passed="false",
+                sanity_issues_json=json.dumps(["EBITDA > Revenue"]),
+            )
+        db_session.commit()
+
+        svc = CompanyAnalysisService(db_session)
+        result = svc.analyze(COMPANY)
+
+        assert len(result.aggregated_anomalies) >= 1
+        agg = result.aggregated_anomalies[0]
+        assert agg.count == 3
+        assert len(agg.periods) == 3
+        assert len(agg.sample_record_ids) == 3
+
+    def test_aggregation_limits_sample_ids(self, db_session):
+        """Sample IDs capped at 5."""
+        for i in range(8):
+            _make_record(
+                db_session, metric="Revenue", value=100 + i, period=f"Q{(i % 4) + 1}-2025",
+                sanity_passed="false",
+                sanity_issues_json=json.dumps(["Some issue"]),
+            )
+        db_session.commit()
+
+        svc = CompanyAnalysisService(db_session)
+        result = svc.analyze(COMPANY)
+
+        for agg in result.aggregated_anomalies:
+            assert len(agg.sample_record_ids) <= 5
+
+
+class TestComparisonWarning:
+    def test_period_type_mismatch_warning(self, db_session):
+        """Comparing FY vs Q produces a comparison_warning."""
+        _make_record(db_session, metric="Revenue", value=1000, period="Q4-2024")
+        _make_record(db_session, metric="Revenue", value=5000, period="FY-2025")
+        db_session.commit()
+
+        svc = CompanyAnalysisService(db_session)
+        result = svc.analyze(COMPANY)
+
+        assert result.period_type_mismatch is True
+        assert result.comparisons[0].comparison_warning is not None
+        assert "period types" in result.comparisons[0].comparison_warning
+
+    def test_same_period_type_no_warning(self, db_session):
+        _make_record(db_session, metric="Revenue", value=1000, period="Q1-2025")
+        _make_record(db_session, metric="Revenue", value=1100, period="Q2-2025")
+        db_session.commit()
+
+        svc = CompanyAnalysisService(db_session)
+        result = svc.analyze(COMPANY)
+
+        assert result.period_type_mismatch is False
+        for c in result.comparisons:
+            assert c.comparison_warning is None
+
+
+class TestRevisionComparisons:
+    def test_single_period_revision_detected(self, db_session):
+        """Two versions of same metric in same period triggers revision comparison."""
+        _make_record(
+            db_session, metric="Revenue", value=900, period="Q1-2025",
+            version=1, status="PENDING",
+        )
+        _make_record(
+            db_session, metric="Revenue", value=1000, period="Q1-2025",
+            version=2, status="PENDING",
+        )
+        db_session.commit()
+
+        svc = CompanyAnalysisService(db_session)
+        result = svc.analyze(COMPANY)
+
+        rev = next(c for c in result.comparisons if c.metric == "Revenue")
+        assert rev.current_value == 1000
+        assert rev.previous_value == 900
+        assert rev.comparison_warning is not None
+        assert "revision" in rev.comparison_warning.lower()
+
+    def test_single_version_no_revision_comparison(self, db_session):
+        """Single version should NOT produce revision comparisons."""
+        _make_record(
+            db_session, metric="Revenue", value=1000, period="Q1-2025",
+            version=1,
+        )
+        db_session.commit()
+
+        svc = CompanyAnalysisService(db_session)
+        result = svc.analyze(COMPANY)
+
+        rev = next(c for c in result.comparisons if c.metric == "Revenue")
+        assert rev.previous_value is None
+        assert rev.comparison_warning is None
+
+
+class TestMissingClassification:
+    def test_failed_mapping_type(self, db_session):
+        """Missing metric classified as failed_mapping when pipeline had unmapped labels."""
+        # Simulate pipeline context — create an audit log entry
+        from src.models.database import AuditLog
+        _make_record(db_session, metric="Revenue", value=1000, period="Q1-2025")
+        audit = AuditLog(
+            id=str(uuid.uuid4()),
+            event_type="PIPELINE_COMPLETE",
+            details={"company_id": COMPANY, "unmapped_count": 15, "noise_filtered_count": 0},
+            timestamp=datetime.now(UTC),
+        )
+        db_session.add(audit)
+        db_session.commit()
+
+        svc = CompanyAnalysisService(db_session)
+        result = svc.analyze(COMPANY)
+
+        fm = [m for m in result.missing if m.type == "failed_mapping"]
+        assert len(fm) > 0
+        assert "failed to map" in fm[0].reason
+
+    def test_filtered_noise_type(self, db_session):
+        """Missing metric classified as filtered_noise when pipeline had noise."""
+        from src.models.database import AuditLog
+        _make_record(db_session, metric="Revenue", value=1000, period="Q1-2025")
+        audit = AuditLog(
+            id=str(uuid.uuid4()),
+            event_type="PIPELINE_COMPLETE",
+            details={"company_id": COMPANY, "unmapped_count": 0, "noise_filtered_count": 10},
+            timestamp=datetime.now(UTC),
+        )
+        db_session.add(audit)
+        db_session.commit()
+
+        svc = CompanyAnalysisService(db_session)
+        result = svc.analyze(COMPANY)
+
+        fn = [m for m in result.missing if m.type == "filtered_noise"]
+        assert len(fn) > 0
+        assert "noise" in fn[0].reason
+
+
 class TestAnalysisOutputSchema:
     def test_output_has_all_fields(self, db_session):
         _make_record(db_session, metric="Revenue", value=1000, period="Q1-2025")
@@ -453,6 +598,7 @@ class TestAnalysisOutputSchema:
         assert isinstance(result.periods_available, list)
         assert isinstance(result.comparisons, list)
         assert isinstance(result.anomalies, list)
+        assert isinstance(result.aggregated_anomalies, list)
         assert isinstance(result.missing, list)
         assert result.trust is not None
         assert result.trust.label in ("high", "medium", "low")
@@ -460,6 +606,7 @@ class TestAnalysisOutputSchema:
         assert isinstance(result.comparison_warnings, int)
         assert isinstance(result.anomaly_count, int)
         assert isinstance(result.missing_count, int)
+        assert isinstance(result.period_type_mismatch, bool)
 
     def test_two_period_has_previous(self, db_session):
         _make_record(db_session, metric="Revenue", value=1000, period="Q1-2025")

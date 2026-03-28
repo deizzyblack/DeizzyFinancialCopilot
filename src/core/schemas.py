@@ -128,6 +128,8 @@ class PipelineResult(BaseModel):
     status: str
     records_extracted: int = 0
     records_created: int = 0
+    unmapped_count: int = 0
+    noise_filtered_count: int = 0
     outcomes: list[RecordOutcome] = []
     actions: list[ActionRecommendation] = []
     errors: list[str] = []

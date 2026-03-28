@@ -131,6 +131,7 @@ export interface MetricComparison {
   delta_percent: number | null;
   severity: "normal" | "warning" | "critical";
   explanation: string;
+  comparison_warning: string | null;
 }
 
 export interface AnalysisAnomaly {
@@ -143,11 +144,26 @@ export interface AnalysisAnomaly {
   record_id: string;
 }
 
+export interface AggregatedAnomaly {
+  kind: string;
+  issue: string;
+  severity: string;
+  count: number;
+  metrics: string[];
+  periods: string[];
+  sample_record_ids: string[];
+}
+
 export interface MissingItem {
   metric: string;
   period: string;
   reason: string;
-  type: "absent_in_latest" | "partial_balance_sheet" | "period_regression";
+  type:
+    | "absent_in_latest"
+    | "failed_mapping"
+    | "filtered_noise"
+    | "partial_balance_sheet"
+    | "period_regression";
 }
 
 export interface TrustAssessment {
@@ -173,9 +189,11 @@ export interface CompanyAnalysis {
   upload_count: number;
   comparisons: MetricComparison[];
   anomalies: AnalysisAnomaly[];
+  aggregated_anomalies: AggregatedAnomaly[];
   missing: MissingItem[];
   trust: TrustAssessment;
   comparison_warnings: number;
   anomaly_count: number;
   missing_count: number;
+  period_type_mismatch: boolean;
 }

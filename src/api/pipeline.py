@@ -87,12 +87,14 @@ class Pipeline:
         )
 
         records_created = 0
+        unmapped_count = 0
         source_score = self.source_reliability.get_score(source_type, uploaded_by)
 
         for extraction in extractions:
             # M3 — Map
             mapping = self.mapper.map_label(extraction.raw_label, company_id)
             if mapping.metric is None:
+                unmapped_count += 1
                 continue
 
             self.audit.log(
@@ -219,6 +221,20 @@ class Pipeline:
                 )
             )
 
+        noise_filtered = self.parser.skipped_zero + self.parser.skipped_adj
+
+        self.audit.log(
+            AuditEventType.PIPELINE_COMPLETE.value,
+            file_id=file_meta.file_id,
+            details={
+                "records_extracted": len(extractions),
+                "records_created": records_created,
+                "unmapped_count": unmapped_count,
+                "noise_filtered_count": noise_filtered,
+                "company_id": company_id,
+            },
+        )
+
         self.session.commit()
 
         return PipelineResult(
@@ -227,6 +243,8 @@ class Pipeline:
             status="COMPLETED",
             records_extracted=len(extractions),
             records_created=records_created,
+            unmapped_count=unmapped_count,
+            noise_filtered_count=noise_filtered,
             outcomes=outcomes,
             actions=actions,
             errors=errors,

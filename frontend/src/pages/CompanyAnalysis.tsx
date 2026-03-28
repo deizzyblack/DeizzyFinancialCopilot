@@ -2,12 +2,15 @@ import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { getCompanyAnalysis } from "../api";
 import type {
+  AggregatedAnomaly,
   AnalysisAnomaly,
   CompanyAnalysis as CompanyAnalysisType,
   MetricComparison,
   MissingItem,
   TrustAssessment,
 } from "../types";
+
+const AGGREGATION_THRESHOLD = 20;
 
 function formatNumber(n: number): string {
   const abs = Math.abs(n);
@@ -32,6 +35,8 @@ function kindLabel(kind: string): string {
 
 function missingTypeLabel(type: string): string {
   if (type === "absent_in_latest") return "Missing";
+  if (type === "failed_mapping") return "Unmapped";
+  if (type === "filtered_noise") return "Filtered";
   if (type === "partial_balance_sheet") return "Partial BS";
   if (type === "period_regression") return "Regression";
   return type;
@@ -124,9 +129,11 @@ function TrustSection({ trust }: { trust: TrustAssessment }) {
 function ComparisonsSection({
   comparisons,
   hasPrevious,
+  periodTypeMismatch,
 }: {
   comparisons: MetricComparison[];
   hasPrevious: boolean;
+  periodTypeMismatch: boolean;
 }) {
   if (comparisons.length === 0) {
     return (
@@ -137,12 +144,27 @@ function ComparisonsSection({
     );
   }
 
+  const isRevision = comparisons.some(
+    (c) =>
+      c.comparison_warning?.includes("revisions within the same period"),
+  );
+
   return (
     <section className="analysis-section">
       <h2 className="section-title">What Changed?</h2>
-      {!hasPrevious && (
+      {!hasPrevious && !isRevision && (
         <div className="info-banner">
           Only one period available — no comparison possible
+        </div>
+      )}
+      {isRevision && (
+        <div className="info-banner">
+          Single period with revisions — showing old vs revised values
+        </div>
+      )}
+      {periodTypeMismatch && comparisons[0]?.comparison_warning && (
+        <div className="info-banner info-banner-warning">
+          {comparisons[0].comparison_warning}
         </div>
       )}
       <div className="comparison-table-wrap">
@@ -150,18 +172,28 @@ function ComparisonsSection({
           <thead>
             <tr>
               <th>Metric</th>
-              {hasPrevious && <th className="num-col">Previous</th>}
-              <th className="num-col">Current</th>
-              {hasPrevious && <th className="num-col">Delta</th>}
-              {hasPrevious && <th className="num-col">%</th>}
-              {hasPrevious && <th>Status</th>}
+              {(hasPrevious || isRevision) && (
+                <th className="num-col">
+                  {isRevision ? "Before" : "Previous"}
+                </th>
+              )}
+              <th className="num-col">
+                {isRevision ? "Revised" : "Current"}
+              </th>
+              {(hasPrevious || isRevision) && (
+                <th className="num-col">Delta</th>
+              )}
+              {(hasPrevious || isRevision) && (
+                <th className="num-col">%</th>
+              )}
+              {(hasPrevious || isRevision) && <th>Status</th>}
             </tr>
           </thead>
           <tbody>
             {comparisons.map((c) => (
               <tr key={c.metric} className={severityClass(c.severity)}>
                 <td className="metric-name">{c.metric}</td>
-                {hasPrevious && (
+                {(hasPrevious || isRevision) && (
                   <td className="num-col">
                     {c.previous_value !== null
                       ? formatNumber(c.previous_value)
@@ -169,19 +201,19 @@ function ComparisonsSection({
                   </td>
                 )}
                 <td className="num-col">{formatNumber(c.current_value)}</td>
-                {hasPrevious && (
+                {(hasPrevious || isRevision) && (
                   <td className="num-col">
                     {c.delta !== null ? formatNumber(c.delta) : "—"}
                   </td>
                 )}
-                {hasPrevious && (
+                {(hasPrevious || isRevision) && (
                   <td className="num-col">
                     {c.delta_percent !== null
                       ? `${c.delta_percent > 0 ? "+" : ""}${c.delta_percent.toFixed(1)}%`
                       : "—"}
                   </td>
                 )}
-                {hasPrevious && (
+                {(hasPrevious || isRevision) && (
                   <td>
                     {c.severity === "critical" && (
                       <span className="pill pill-critical">critical</span>
@@ -218,7 +250,87 @@ function ComparisonsSection({
   );
 }
 
-function AnomaliesSection({ anomalies }: { anomalies: AnalysisAnomaly[] }) {
+function AggregatedAnomaliesView({
+  aggregated,
+}: {
+  aggregated: AggregatedAnomaly[];
+}) {
+  return (
+    <div className="anomaly-list">
+      {aggregated.map((a, i) => (
+        <div key={i} className={`anomaly-card ${severityClass(a.severity)}`}>
+          <div className="anomaly-header">
+            <span className={`pill pill-${a.severity}`}>{a.severity}</span>
+            <span className="pill pill-kind">{kindLabel(a.kind)}</span>
+            <span className="anomaly-count-badge">{a.count}x</span>
+          </div>
+          <p className="anomaly-issue">{a.issue}</p>
+          <div className="anomaly-meta">
+            <span>
+              Metrics: {a.metrics.join(", ")}
+            </span>
+            <span>
+              Periods: {a.periods.length > 3
+                ? `${a.periods.slice(0, 3).join(", ")} +${a.periods.length - 3}`
+                : a.periods.join(", ")}
+            </span>
+          </div>
+          {a.sample_record_ids.length > 0 && (
+            <div className="anomaly-samples">
+              {a.sample_record_ids.map((id) => (
+                <Link key={id} to={`/records/${id}`} className="anomaly-link">
+                  {id.slice(0, 8)}
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DetailedAnomaliesView({
+  anomalies,
+}: {
+  anomalies: AnalysisAnomaly[];
+}) {
+  return (
+    <div className="anomaly-list">
+      {anomalies.map((a, i) => (
+        <div key={i} className={`anomaly-card ${severityClass(a.severity)}`}>
+          <div className="anomaly-header">
+            <span className={`pill pill-${a.severity}`}>{a.severity}</span>
+            <span className="pill pill-kind">{kindLabel(a.kind)}</span>
+            <span className="anomaly-metric">
+              {a.metric} — {a.period}
+            </span>
+          </div>
+          <div className="anomaly-body">
+            <span className="anomaly-value">
+              Value: {formatNumber(a.value)}
+            </span>
+            <p className="anomaly-issue">{a.issue}</p>
+          </div>
+          <Link to={`/records/${a.record_id}`} className="anomaly-link">
+            View record
+          </Link>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function AnomaliesSection({
+  anomalies,
+  aggregated,
+}: {
+  anomalies: AnalysisAnomaly[];
+  aggregated: AggregatedAnomaly[];
+}) {
+  const [showDetailed, setShowDetailed] = useState(false);
+  const isLarge = anomalies.length > AGGREGATION_THRESHOLD;
+
   if (anomalies.length === 0) {
     return (
       <section className="analysis-section">
@@ -232,32 +344,25 @@ function AnomaliesSection({ anomalies }: { anomalies: AnalysisAnomaly[] }) {
 
   return (
     <section className="analysis-section">
-      <h2 className="section-title">What Is Wrong?</h2>
-      <div className="anomaly-list">
-        {anomalies.map((a, i) => (
-          <div key={i} className={`anomaly-card ${severityClass(a.severity)}`}>
-            <div className="anomaly-header">
-              <span className={`pill pill-${a.severity}`}>{a.severity}</span>
-              <span className="pill pill-kind">{kindLabel(a.kind)}</span>
-              <span className="anomaly-metric">
-                {a.metric} — {a.period}
-              </span>
-            </div>
-            <div className="anomaly-body">
-              <span className="anomaly-value">
-                Value: {formatNumber(a.value)}
-              </span>
-              <p className="anomaly-issue">{a.issue}</p>
-            </div>
-            <Link
-              to={`/records/${a.record_id}`}
-              className="anomaly-link"
-            >
-              View record
-            </Link>
-          </div>
-        ))}
+      <div className="section-title-row">
+        <h2 className="section-title">
+          What Is Wrong?{" "}
+          <span className="section-count">({anomalies.length})</span>
+        </h2>
+        {isLarge && (
+          <button
+            className="toggle-view-btn"
+            onClick={() => setShowDetailed(!showDetailed)}
+          >
+            {showDetailed ? "Show grouped" : "Show all"}
+          </button>
+        )}
       </div>
+      {isLarge && !showDetailed ? (
+        <AggregatedAnomaliesView aggregated={aggregated} />
+      ) : (
+        <DetailedAnomaliesView anomalies={anomalies} />
+      )}
     </section>
   );
 }
@@ -326,7 +431,6 @@ export function CompanyAnalysis() {
 
   return (
     <div className="analysis-page">
-      {/* Company search */}
       <form className="analysis-search" onSubmit={handleSubmit}>
         <input
           type="text"
@@ -359,7 +463,6 @@ export function CompanyAnalysis() {
 
       {data && !loading && (
         <>
-          {/* Header */}
           <header className="analysis-header">
             <div className="analysis-header-title">
               <h1>{data.company_id}</h1>
@@ -381,6 +484,12 @@ export function CompanyAnalysis() {
               <span>{data.periods_available.length} periods</span>
               <span className="meta-dot" />
               <span>{data.upload_count} uploads</span>
+              {data.period_type_mismatch && (
+                <>
+                  <span className="meta-dot" />
+                  <span className="text-yellow">mixed period types</span>
+                </>
+              )}
             </div>
             <div className="analysis-header-pills">
               <span
@@ -401,16 +510,18 @@ export function CompanyAnalysis() {
             </div>
           </header>
 
-          {/* Sections */}
           <TrustSection trust={data.trust} />
           <ComparisonsSection
             comparisons={data.comparisons}
             hasPrevious={data.previous_period !== null}
+            periodTypeMismatch={data.period_type_mismatch}
           />
-          <AnomaliesSection anomalies={data.anomalies} />
+          <AnomaliesSection
+            anomalies={data.anomalies}
+            aggregated={data.aggregated_anomalies}
+          />
           <MissingSection missing={data.missing} />
 
-          {/* Upload history summary */}
           <section className="analysis-section">
             <h2 className="section-title">Upload History</h2>
             <div className="upload-summary">
