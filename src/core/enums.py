@@ -39,6 +39,7 @@ class PeriodType(str, Enum):
 class StandardMetric(str, Enum):
     REVENUE = "Revenue"
     EBITDA = "EBITDA"
+    GROSS_PROFIT = "Gross Profit"
     NET_INCOME = "Net Income"
     CASH = "Cash"
     ASSETS = "Assets"

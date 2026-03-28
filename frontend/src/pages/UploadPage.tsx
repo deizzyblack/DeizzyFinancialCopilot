@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Link } from "react-router-dom";
 import { ingestFile } from "../api";
 import { StatusBadge } from "../components/StatusBadge";
@@ -10,6 +10,8 @@ export function UploadPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<PipelineResult | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   async function handleUpload() {
     if (!file || !company.trim()) return;
@@ -23,6 +25,15 @@ export function UploadPage() {
       setError(e instanceof Error ? e.message : "Upload failed");
     } finally {
       setLoading(false);
+    }
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setDragging(false);
+    const f = e.dataTransfer.files[0];
+    if (f && (f.name.endsWith(".xlsx") || f.name.endsWith(".xls"))) {
+      setFile(f);
     }
   }
 
@@ -64,6 +75,7 @@ export function UploadPage() {
   return (
     <div className="page">
       <h1>Upload Financial Data</h1>
+      <p className="page-subtitle">Drop an Excel file to extract and validate financial metrics</p>
 
       <div className="card">
         <div className="form-row">
@@ -75,20 +87,49 @@ export function UploadPage() {
             placeholder="e.g. Acme Corp"
           />
         </div>
-        <div className="form-row">
-          <label>Excel file</label>
+
+        <div
+          className={`upload-zone ${dragging ? "dragging" : ""}`}
+          onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={handleDrop}
+          onClick={() => fileRef.current?.click()}
+        >
           <input
+            ref={fileRef}
             type="file"
             accept=".xlsx,.xls"
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            style={{ display: "none" }}
           />
+          <div className="upload-icon">+</div>
+          {file ? (
+            <>
+              <div className="upload-text">{file.name}</div>
+              <div className="upload-hint">{(file.size / 1024).toFixed(0)} KB</div>
+            </>
+          ) : (
+            <>
+              <div className="upload-text">Drop your Excel file here</div>
+              <div className="upload-hint">.xlsx or .xls files supported</div>
+            </>
+          )}
         </div>
-        <button
-          onClick={handleUpload}
-          disabled={loading || !file || !company.trim()}
-        >
-          {loading ? "Processing..." : "Upload"}
-        </button>
+
+        {loading ? (
+          <div className="processing-indicator">
+            <div className="processing-spinner" />
+            <span className="processing-text">Processing file through pipeline...</span>
+          </div>
+        ) : (
+          <button
+            onClick={handleUpload}
+            disabled={!file || !company.trim()}
+            style={{ marginTop: 16 }}
+          >
+            Process File
+          </button>
+        )}
       </div>
 
       {error && <div className="error-box">{error}</div>}
@@ -98,11 +139,33 @@ export function UploadPage() {
           <h2>
             {result.status === "DUPLICATE"
               ? "Duplicate file detected"
-              : `${result.records_created} records extracted from ${result.filename}`}
+              : `${result.records_created} records extracted`}
           </h2>
 
           {result.status === "COMPLETED" && grouped && (
             <>
+              {/* Stat pills */}
+              <div className="stat-grid" style={{ marginBottom: 16 }}>
+                {autoCount > 0 && (
+                  <div className="stat-card" style={{ borderLeft: "3px solid var(--green)" }}>
+                    <span className="stat-value" style={{ fontSize: 24 }}>{autoCount}</span>
+                    <span className="stat-label">Auto-Ready</span>
+                  </div>
+                )}
+                {reviewCount > 0 && (
+                  <div className="stat-card" style={{ borderLeft: "3px solid var(--yellow)" }}>
+                    <span className="stat-value" style={{ fontSize: 24 }}>{reviewCount}</span>
+                    <span className="stat-label">Needs Review</span>
+                  </div>
+                )}
+                {flagCount > 0 && (
+                  <div className="stat-card" style={{ borderLeft: "3px solid var(--red)" }}>
+                    <span className="stat-value" style={{ fontSize: 24 }}>{flagCount}</span>
+                    <span className="stat-label">Flagged</span>
+                  </div>
+                )}
+              </div>
+
               <div className="summary-bars">
                 {(["AUTO_READY", "REVIEW_REQUIRED", "FLAG"] as const).map(
                   (key) => {
@@ -119,6 +182,7 @@ export function UploadPage() {
                         <div className="summary-track">
                           <div
                             className="summary-fill"
+                            data-type={key}
                             style={{ width: `${pct}%` }}
                           />
                         </div>
@@ -132,11 +196,16 @@ export function UploadPage() {
                 <div className="issues-list">
                   <h3>Issues requiring attention:</h3>
                   <ul>
-                    {flagged.map((o) => (
+                    {flagged.slice(0, 10).map((o) => (
                       <li key={o.record_id}>
                         <strong>{o.metric ?? "Unknown"}</strong>: {o.reason}
                       </li>
                     ))}
+                    {flagged.length > 10 && (
+                      <li style={{ background: "transparent", border: "none", color: "var(--text-muted)" }}>
+                        +{flagged.length - 10} more issues
+                      </li>
+                    )}
                   </ul>
                 </div>
               )}

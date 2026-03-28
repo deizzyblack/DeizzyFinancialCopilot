@@ -1,4 +1,5 @@
 import type {
+  BenchmarkingResult,
   ExecuteResult,
   PaginatedAudit,
   PaginatedRecords,
@@ -52,6 +53,18 @@ export async function executeAction(
   const res = await fetch(`${BASE}/execute/${id}?${params}`, {
     method: "POST",
   });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function getBenchmarking(
+  metric?: string,
+  period?: string,
+): Promise<BenchmarkingResult> {
+  const params = new URLSearchParams();
+  if (metric) params.set("metric", metric);
+  if (period) params.set("period", period);
+  const res = await fetch(`${BASE}/benchmarking?${params}`);
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }

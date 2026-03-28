@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { getPendingRecords } from "../api";
 import { ConfidenceBar } from "../components/ConfidenceBar";
 import { StatusBadge } from "../components/StatusBadge";
@@ -18,8 +18,9 @@ function fmt(n: number): string {
 }
 
 export function ReviewQueue() {
+  const [searchParams] = useSearchParams();
   const [data, setData] = useState<PaginatedRecords | null>(null);
-  const [filter, setFilter] = useState("");
+  const [filter, setFilter] = useState(searchParams.get("filter") || "");
   const [page, setPage] = useState(1);
   const [error, setError] = useState("");
 
@@ -35,7 +36,10 @@ export function ReviewQueue() {
   return (
     <div className="page">
       <div className="page-header">
-        <h1>Review Queue</h1>
+        <div>
+          <h1>Review Queue</h1>
+          {data && <span className="help-text">{data.total} records pending review</span>}
+        </div>
         <div className="filter-tabs">
           {FILTERS.map((f) => (
             <button
@@ -56,9 +60,10 @@ export function ReviewQueue() {
 
       {data && data.records.length === 0 && (
         <div className="card empty-state">
-          <p>No records to review.</p>
+          <div className="empty-state-icon">~</div>
+          <p>No records to review</p>
           <p className="help-text">
-            <Link to="/">Upload a file</Link> to get started, or change the filter above.
+            <Link to="/upload">Upload a file</Link> to get started, or change the filter above.
           </p>
         </div>
       )}
@@ -83,7 +88,7 @@ export function ReviewQueue() {
                   <td>{r.company_id}</td>
                   <td>
                     <Link to={`/records/${r.record_id}`}>
-                      {r.metric ?? "Unknown"}
+                      <span className="metric-pill">{r.metric ?? "Unknown"}</span>
                     </Link>
                   </td>
                   <td className="num">{fmt(r.value)}</td>

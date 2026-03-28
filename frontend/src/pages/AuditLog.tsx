@@ -58,17 +58,18 @@ export function AuditLog() {
   return (
     <div className="page">
       <h1>Audit Trail</h1>
+      <p className="page-subtitle">Complete traceability for every data transformation</p>
 
       <div className="filter-bar">
         <input
           type="text"
-          placeholder="File ID"
+          placeholder="Filter by File ID"
           value={fileId}
           onChange={(e) => updateFilter("file_id", e.target.value)}
         />
         <input
           type="text"
-          placeholder="Record ID"
+          placeholder="Filter by Record ID"
           value={recordId}
           onChange={(e) => updateFilter("record_id", e.target.value)}
         />
@@ -111,7 +112,7 @@ export function AuditLog() {
                         to={`/records/${entry.record_id}`}
                         onClick={(e) => e.stopPropagation()}
                       >
-                        Record
+                        View Record
                       </Link>
                     )}
                   </span>
@@ -128,9 +129,10 @@ export function AuditLog() {
             ))}
             {data.entries.length === 0 && (
               <div className="card empty-state">
-                <p>No audit events yet.</p>
+                <div className="empty-state-icon">~</div>
+                <p>No audit events yet</p>
                 <p className="help-text">
-                  <Link to="/">Process a file</Link> to see the audit trail, or clear
+                  <Link to="/upload">Process a file</Link> to see the audit trail, or clear
                   the filters above.
                 </p>
               </div>

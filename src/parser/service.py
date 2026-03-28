@@ -135,9 +135,16 @@ def _find_label_column(rows_values: list[tuple], header_row: int) -> int:
 
 
 class DocumentParser:
+    def __init__(self):
+        self.skipped_zero = 0
+        self.skipped_adj = 0
+
     def parse_excel(self, file_path: Path) -> list[RawExtraction]:
         if not file_path.exists():
             raise FileNotFoundError(f"File not found: {file_path}")
+
+        self.skipped_zero = 0
+        self.skipped_adj = 0
 
         wb = openpyxl.load_workbook(file_path, data_only=True, read_only=True)
         extractions = []
@@ -191,13 +198,26 @@ class DocumentParser:
 
                 for cell in row[label_col_idx + 1:]:
                     if _is_numeric(cell.value):
+                        numeric_val = _to_numeric(cell.value)
+
+                        # Noise filter: skip zero-value cells
+                        if numeric_val is not None and abs(numeric_val) < 0.01:
+                            self.skipped_zero += 1
+                            continue
+
+                        # Noise filter: skip adjustment columns
+                        col_header = headers.get(cell.column)
+                        if col_header and "adj" in str(col_header).lower():
+                            self.skipped_adj += 1
+                            continue
+
                         extractions.append(
                             RawExtraction(
                                 raw_label=raw_label,
-                                raw_value=_to_numeric(cell.value),
+                                raw_value=numeric_val,
                                 sheet=sheet_name,
                                 cell=_cell_ref(cell.row, cell.column),
-                                column_header=headers.get(cell.column),
+                                column_header=col_header,
                                 row_index=cell.row,
                             )
                         )

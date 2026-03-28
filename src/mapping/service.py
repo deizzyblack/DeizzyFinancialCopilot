@@ -41,6 +41,8 @@ SYNONYM_MAP: dict[str, StandardMetric] = {
     "shareholders' equity": StandardMetric.EQUITY,
     "stockholders equity": StandardMetric.EQUITY,
     "book value": StandardMetric.EQUITY,
+    "gross profit": StandardMetric.GROSS_PROFIT,
+    "gross income": StandardMetric.GROSS_PROFIT,
 }
 
 

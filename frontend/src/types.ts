@@ -94,6 +94,25 @@ export interface AuditEntry {
   details: Record<string, unknown>;
 }
 
+export interface CompanyBenchmark {
+  company_id: string;
+  record_count: number;
+  metrics: string[];
+  records: Array<{
+    metric: string;
+    value: number;
+    period: string;
+    version: number;
+    confidence: number;
+  }>;
+}
+
+export interface BenchmarkingResult {
+  companies: CompanyBenchmark[];
+  total_companies: number;
+  filters: { metric: string | null; period: string | null };
+}
+
 export interface PaginatedAudit {
   entries: AuditEntry[];
   total: number;

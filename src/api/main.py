@@ -207,6 +207,58 @@ def get_record_detail(
     }
 
 
+@app.get("/benchmarking")
+def get_benchmarking(
+    metric: str | None = Query(None, description="Filter by metric: Revenue, EBITDA, etc."),
+    period: str | None = Query(None, description="Filter by period: Q3-2025, FY-2024, etc."),
+    db: Session = Depends(get_db),
+):
+    """Cross-company metric comparison for portfolio monitoring."""
+    from src.models.database import FinancialRecord
+
+    query = db.query(FinancialRecord).filter(
+        FinancialRecord.status == "APPROVED",
+        FinancialRecord.metric.isnot(None),
+    )
+
+    if metric:
+        query = query.filter(FinancialRecord.metric == metric)
+    if period:
+        query = query.filter(FinancialRecord.period == period)
+
+    rows = query.order_by(FinancialRecord.company_id, FinancialRecord.period).all()
+
+    # Group by company
+    companies: dict[str, list] = {}
+    for r in rows:
+        if r.company_id not in companies:
+            companies[r.company_id] = []
+        companies[r.company_id].append({
+            "metric": r.metric,
+            "value": r.value,
+            "period": r.period,
+            "version": r.version,
+            "confidence": r.confidence_total or 0.0,
+        })
+
+    # Compute summary stats per company
+    summaries = []
+    for company_id, records in companies.items():
+        metrics_seen = set(r["metric"] for r in records)
+        summaries.append({
+            "company_id": company_id,
+            "record_count": len(records),
+            "metrics": sorted(metrics_seen),
+            "records": records,
+        })
+
+    return {
+        "companies": summaries,
+        "total_companies": len(summaries),
+        "filters": {"metric": metric, "period": period},
+    }
+
+
 @app.get("/audit")
 def get_audit_log(
     file_id: UUID | None = None,

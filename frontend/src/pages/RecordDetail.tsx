@@ -5,6 +5,10 @@ import { ConfidenceBar } from "../components/ConfidenceBar";
 import { StatusBadge } from "../components/StatusBadge";
 import type { RecordDetail as RecordDetailType } from "../types";
 
+function fmt(n: number): string {
+  return n.toLocaleString("en-US", { maximumFractionDigits: 0 });
+}
+
 export function RecordDetail() {
   const { id } = useParams<{ id: string }>();
   const [rec, setRec] = useState<RecordDetailType | null>(null);
@@ -35,21 +39,24 @@ export function RecordDetail() {
     }
   }
 
-  function fmt(n: number): string {
-    return n.toLocaleString("en-US", { maximumFractionDigits: 0 });
-  }
-
   if (error) return <div className="page"><div className="error-box">{error}</div></div>;
-  if (!rec) return <div className="page">Loading...</div>;
+  if (!rec) return (
+    <div className="page">
+      <div className="processing-indicator">
+        <div className="processing-spinner" />
+        <span className="processing-text">Loading record...</span>
+      </div>
+    </div>
+  );
 
   const cb = rec.confidence_breakdown;
 
   return (
     <div className="page">
-      <Link to="/review" className="back-link">Back to Queue</Link>
+      <Link to="/review" className="back-link">&larr; Back to Queue</Link>
 
       <div className="detail-header">
-        <h1>Record Detail</h1>
+        <h1>{rec.metric || "Unknown Metric"}</h1>
         <div className="header-badges">
           <span className="badge-group">
             <span className="badge-label">Status</span>
@@ -68,7 +75,7 @@ export function RecordDetail() {
 
       {/* Data section */}
       <div className="card">
-        <h2>Data</h2>
+        <h2>Financial Data</h2>
         <div className="detail-grid">
           <div className="detail-field">
             <span className="field-label">Company</span>
@@ -76,11 +83,11 @@ export function RecordDetail() {
           </div>
           <div className="detail-field">
             <span className="field-label">Metric</span>
-            <span>{rec.metric}</span>
+            <span className="metric-pill">{rec.metric}</span>
           </div>
           <div className="detail-field">
             <span className="field-label">Value</span>
-            <span>{fmt(rec.value)}</span>
+            <span style={{ fontSize: 20, fontWeight: 700 }}>{fmt(rec.value)}</span>
           </div>
           <div className="detail-field">
             <span className="field-label">Period</span>
@@ -107,7 +114,7 @@ export function RecordDetail() {
           </div>
           <div className="detail-field">
             <span className="field-label">Cell</span>
-            <span>{rec.cell_reference}</span>
+            <span className="mono">{rec.cell_reference}</span>
           </div>
           <div className="detail-field">
             <span className="field-label">Raw label</span>
@@ -115,7 +122,7 @@ export function RecordDetail() {
           </div>
           <div className="detail-field">
             <span className="field-label">Mapped to</span>
-            <span>{rec.mapped_metric}</span>
+            <span className="metric-pill">{rec.mapped_metric}</span>
           </div>
           <div className="detail-field">
             <span className="field-label">Mapping method</span>
