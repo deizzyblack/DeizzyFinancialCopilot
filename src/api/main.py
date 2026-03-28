@@ -207,6 +207,24 @@ def get_record_detail(
     }
 
 
+@app.get("/analysis/{company_id}")
+def get_company_analysis(
+    company_id: str,
+    db: Session = Depends(get_db),
+):
+    """Company Analysis View — answers 4 questions about a company's financial data."""
+    from dataclasses import asdict
+
+    from src.analysis.service import CompanyAnalysisService
+
+    service = CompanyAnalysisService(db)
+    result = service.analyze(company_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"No data found for company '{company_id}'")
+
+    return asdict(result)
+
+
 @app.get("/benchmarking")
 def get_benchmarking(
     metric: str | None = Query(None, description="Filter by metric: Revenue, EBITDA, etc."),

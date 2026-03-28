@@ -232,6 +232,77 @@ class StorageService:
         )
         return [StorageRecord(r) for r in rows], total
 
+    def get_all_for_company(self, company_id: str) -> list[StorageRecord]:
+        """Get all records for a company, ordered by period then metric."""
+        rows = (
+            self.session.query(FinancialRecord)
+            .filter(FinancialRecord.company_id == company_id)
+            .order_by(
+                FinancialRecord.period.desc(),
+                FinancialRecord.metric,
+                FinancialRecord.created_at.desc(),
+            )
+            .all()
+        )
+        return [StorageRecord(r) for r in rows]
+
+    def get_latest_per_metric_period(
+        self, company_id: str
+    ) -> dict[tuple[str, str], "StorageRecord"]:
+        """For each (metric, period), return the most recent record.
+
+        Prefers APPROVED over PENDING. Within the same status, prefers the
+        latest created_at. This gives us the "current best value" for each
+        metric/period combination.
+        """
+        all_records = self.get_all_for_company(company_id)
+        best: dict[tuple[str, str], StorageRecord] = {}
+        for sr in all_records:
+            key = (sr.record.metric.value, sr.record.period)
+            existing = best.get(key)
+            if existing is None:
+                best[key] = sr
+            elif (
+                sr.status == RecordStatus.APPROVED
+                and existing.status != RecordStatus.APPROVED
+            ):
+                best[key] = sr
+        return best
+
+    def get_distinct_periods(self, company_id: str) -> list[str]:
+        """Return sorted distinct periods for a company."""
+        rows = (
+            self.session.query(FinancialRecord.period)
+            .filter(FinancialRecord.company_id == company_id)
+            .distinct()
+            .all()
+        )
+        return sorted(set(r[0] for r in rows))
+
+    def get_upload_history(self, company_id: str) -> list[dict]:
+        """Return distinct files uploaded for this company with record counts."""
+        rows = (
+            self.session.query(
+                FinancialRecord.file_id,
+                FinancialRecord.source_filename,
+                func.count(FinancialRecord.id),
+                func.min(FinancialRecord.created_at),
+            )
+            .filter(FinancialRecord.company_id == company_id)
+            .group_by(FinancialRecord.file_id, FinancialRecord.source_filename)
+            .order_by(func.min(FinancialRecord.created_at).desc())
+            .all()
+        )
+        return [
+            {
+                "file_id": r[0],
+                "filename": r[1] or "",
+                "record_count": r[2],
+                "uploaded_at": r[3].isoformat() if r[3] else "",
+            }
+            for r in rows
+        ]
+
     def _next_version(self, company_id: str, metric: str, period: str) -> int:
         count = self.get_revision_count(company_id, metric, period)
         return count + 1
