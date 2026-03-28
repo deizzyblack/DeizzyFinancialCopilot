@@ -563,10 +563,16 @@ class CompanyAnalysisService:
             )
             groups[(a.kind, issue_key, a.severity)].append(a)
 
+        _severity_rank = {"critical": 0, "warning": 1}
+
         result = []
         for (kind, _, severity), items in sorted(
             groups.items(),
-            key=lambda kv: (-len(kv[1]), kv[0]),
+            key=lambda kv: (
+                _severity_rank.get(kv[0][2], 2),
+                -len(kv[1]),
+                kv[0][0],
+            ),
         ):
             metrics = sorted({a.metric for a in items})
             periods = sorted(
