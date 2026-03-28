@@ -13,6 +13,7 @@ confidence scores. No LLM. No new extraction.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
@@ -43,6 +44,50 @@ LIQUIDITY_METRICS = {
 }
 
 ALL_EXPECTED_METRICS = INCOME_METRICS | BALANCE_METRICS | LIQUIDITY_METRICS
+
+# Period type ordering for chronological sort.
+# Lower number = earlier in the year for same-year periods.
+_PERIOD_TYPE_ORDER = {"Q": 0, "H": 1, "FY": 2, "YTD": 3, "UNKNOWN": 9}
+
+
+def _period_sort_key(period: str) -> tuple[int, int, str]:
+    """Sort key that orders periods chronologically.
+
+    Returns (year, sub_order, original) so that:
+    - Q1-2024 < Q2-2024 < ... < Q4-2024 < Q1-2025
+    - FY-2024 sorts after all quarters of 2024
+    - UNKNOWN sorts last
+    """
+    if period == "UNKNOWN":
+        return (9999, 0, period)
+
+    # Extract year (last 4 digits)
+    year_match = re.search(r"(\d{4})$", period)
+    year = int(year_match.group(1)) if year_match else 9998
+
+    # Extract type prefix and number
+    # Q1-2025 -> type=Q, num=1
+    # H2-2024 -> type=H, num=2
+    # FY-2024 -> type=FY, num=0
+    # YTD-2025 -> type=YTD, num=0
+    prefix_match = re.match(r"([A-Za-z]+)(\d?)-", period)
+    if prefix_match:
+        ptype = prefix_match.group(1).upper()
+        pnum = int(prefix_match.group(2)) if prefix_match.group(2) else 0
+    else:
+        ptype = "UNKNOWN"
+        pnum = 0
+
+    # Build sub-order: type_order * 10 + number
+    type_order = _PERIOD_TYPE_ORDER.get(ptype, 8)
+    sub_order = type_order * 10 + pnum
+
+    return (year, sub_order, period)
+
+
+def sort_periods(periods: list[str]) -> list[str]:
+    """Sort periods chronologically."""
+    return sorted(periods, key=_period_sort_key)
 
 
 @dataclass
@@ -146,21 +191,27 @@ class CompanyAnalysisService:
 
     def analyze(self, company_id: str) -> CompanyAnalysis | None:
         """Run full analysis for a company. Returns None if no data exists."""
-        periods = self.storage.get_distinct_periods(company_id)
-        if not periods:
+        raw_periods = self.storage.get_distinct_periods(company_id)
+        if not raw_periods:
             return None
+
+        # Sort chronologically and exclude UNKNOWN from latest/previous
+        periods = sort_periods(raw_periods)
+        known_periods = [p for p in periods if p != "UNKNOWN"]
 
         best = self.storage.get_latest_per_metric_period(company_id)
         uploads = self.storage.get_upload_history(company_id)
 
-        latest_period = periods[-1] if periods else None
-        previous_period = periods[-2] if len(periods) >= 2 else None
+        latest_period = known_periods[-1] if known_periods else None
+        previous_period = (
+            known_periods[-2] if len(known_periods) >= 2 else None
+        )
 
         comparisons = self._build_comparisons(
             best, latest_period, previous_period
         )
         anomalies = self._find_anomalies(company_id)
-        missing = self._find_missing(best, latest_period, periods)
+        missing = self._find_missing(best, latest_period, known_periods)
         trust = self._assess_trust(company_id)
 
         comparison_warnings = sum(
@@ -307,7 +358,11 @@ class CompanyAnalysisService:
     # ──────────────────────────────────────────────
 
     def _find_anomalies(self, company_id: str) -> list[Anomaly]:
-        """Surface all records with sanity failures or hard blocks."""
+        """Surface records with sanity failures, hard blocks, or weak mappings.
+
+        Deduplicates: if a record has a sanity_failure, its corresponding
+        hard_block (which just echoes the same issue) is suppressed.
+        """
         rows = (
             self.session.query(FinancialRecord)
             .filter(
@@ -318,9 +373,14 @@ class CompanyAnalysisService:
         )
 
         anomalies = []
+        # Track record IDs that have sanity failures so we skip
+        # redundant hard_block entries for the same record.
+        sanity_record_ids: set[str] = set()
+
         for row in rows:
-            # Sanity failures
+            # Sanity failures (highest priority)
             if row.sanity_passed == "false":
+                sanity_record_ids.add(row.id)
                 issues = []
                 try:
                     issues = json.loads(row.sanity_issues_json or "[]")
@@ -339,24 +399,30 @@ class CompanyAnalysisService:
                         )
                     )
 
-            # Hard-blocked by confidence engine
-            if row.decision == "FLAG" and row.decision_reason:
-                reason = row.decision_reason
-                if "Hard blocked" in reason:
-                    block_text = reason.replace(
-                        "Hard blocked: ", ""
+        # Second pass: hard blocks and weak mappings (skip duplicates)
+        for row in rows:
+            # Hard-blocked by confidence engine — skip if already
+            # surfaced as sanity_failure for the same record
+            if (
+                row.decision == "FLAG"
+                and row.decision_reason
+                and "Hard blocked" in row.decision_reason
+                and row.id not in sanity_record_ids
+            ):
+                block_text = row.decision_reason.replace(
+                    "Hard blocked: ", ""
+                )
+                anomalies.append(
+                    Anomaly(
+                        metric=row.metric,
+                        period=row.period,
+                        value=row.value,
+                        issue=block_text,
+                        kind="hard_block",
+                        severity="warning",
+                        record_id=row.id,
                     )
-                    anomalies.append(
-                        Anomaly(
-                            metric=row.metric,
-                            period=row.period,
-                            value=row.value,
-                            issue=block_text,
-                            kind="hard_block",
-                            severity="warning",
-                            record_id=row.id,
-                        )
-                    )
+                )
 
             # Low-confidence mapping (partial match with score < 0.8)
             if (
@@ -435,13 +501,14 @@ class CompanyAnalysisService:
                 MissingItem(
                     metric=StandardMetric.CASH.value,
                     period=latest_period,
-                    reason=f"No Cash position found for {latest_period}",
+                    reason=(
+                        f"No Cash position found for {latest_period}"
+                    ),
                     type="absent_in_latest",
                 )
             )
 
-        # Check for period gaps: if we have data for some metrics in
-        # earlier periods but not the latest, flag it
+        # Period regression: metric present in previous but absent in latest
         if len(periods) >= 2:
             previous_period = periods[-2]
             prev_metrics = {
@@ -449,7 +516,6 @@ class CompanyAnalysisService:
                 for (metric, period) in best
                 if period == previous_period
             }
-            # Metrics present in previous period but absent in latest
             regressed = prev_metrics - present_metrics
             for m in sorted(regressed):
                 missing.append(
@@ -512,13 +578,25 @@ class CompanyAnalysisService:
             and "Hard blocked" in (r.decision_reason or "")
         )
 
-        # Overall score: weighted average of all confidence scores
+        # Overall score: mean confidence of non-rejected records
         scores = [
             r.confidence_total
             for r in rows
             if r.confidence_total is not None and r.status != "REJECTED"
         ]
-        overall = sum(scores) / len(scores) if scores else 0.0
+        raw_avg = sum(scores) / len(scores) if scores else 0.0
+
+        # Apply penalty for sanity failures and hard blocks.
+        # Each failure reduces trust — a dataset with 30% failures
+        # should not show "high" trust even if avg confidence is 0.85.
+        active_count = len(scores)
+        if active_count > 0:
+            failure_rate = (sanity_fails + hard_blocked) / active_count
+            # Penalty: up to 0.3 reduction at 100% failure rate
+            penalty = min(failure_rate * 0.3, 0.3)
+            overall = max(raw_avg - penalty, 0.0)
+        else:
+            overall = 0.0
 
         # Find weakest area
         weakest_metric = "N/A"

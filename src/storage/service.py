@@ -270,14 +270,16 @@ class StorageService:
         return best
 
     def get_distinct_periods(self, company_id: str) -> list[str]:
-        """Return sorted distinct periods for a company."""
+        """Return chronologically sorted distinct periods for a company."""
+        from src.analysis.service import sort_periods
+
         rows = (
             self.session.query(FinancialRecord.period)
             .filter(FinancialRecord.company_id == company_id)
             .distinct()
             .all()
         )
-        return sorted(set(r[0] for r in rows))
+        return sort_periods([r[0] for r in rows])
 
     def get_upload_history(self, company_id: str) -> list[dict]:
         """Return distinct files uploaded for this company with record counts."""
