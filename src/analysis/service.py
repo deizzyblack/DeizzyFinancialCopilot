@@ -68,6 +68,7 @@ class Anomaly:
     period: str
     value: float
     issue: str
+    kind: str  # sanity_failure | hard_block | weak_mapping
     severity: str  # warning | critical
     record_id: str
 
@@ -79,6 +80,7 @@ class MissingItem:
     metric: str
     period: str
     reason: str
+    type: str  # absent_in_latest | partial_balance_sheet | period_regression
 
 
 @dataclass
@@ -86,6 +88,7 @@ class TrustAssessment:
     """Confidence summary for a company's data."""
 
     overall_score: float  # 0-1
+    label: str  # high | medium | low
     total_records: int
     approved_count: int
     pending_count: int
@@ -105,6 +108,7 @@ class CompanyAnalysis:
     company_id: str
     periods_available: list[str]
     latest_period: str | None
+    previous_period: str | None
     upload_count: int
 
     # Q1: What changed?
@@ -123,6 +127,14 @@ class CompanyAnalysis:
     comparison_warnings: int = 0
     anomaly_count: int = 0
     missing_count: int = 0
+
+
+def _trust_label(score: float) -> str:
+    if score >= 0.8:
+        return "high"
+    if score >= 0.5:
+        return "medium"
+    return "low"
 
 
 class CompanyAnalysisService:
@@ -159,6 +171,7 @@ class CompanyAnalysisService:
             company_id=company_id,
             periods_available=periods,
             latest_period=latest_period,
+            previous_period=previous_period,
             upload_count=len(uploads),
             comparisons=comparisons,
             anomalies=anomalies,
@@ -206,7 +219,9 @@ class CompanyAnalysisService:
             if previous_value is not None:
                 delta = current_value - previous_value
                 if previous_value != 0:
-                    delta_pct = round((delta / abs(previous_value)) * 100, 2)
+                    delta_pct = round(
+                        (delta / abs(previous_value)) * 100, 2
+                    )
 
                 # Classify severity
                 severity, explanation = self._classify_change(
@@ -245,22 +260,34 @@ class CompanyAnalysisService:
         # Revenue decline > 20% is a warning, > 50% is critical
         if metric == StandardMetric.REVENUE.value:
             if pct < -50:
-                return "critical", f"Revenue dropped {abs_pct:.0f}% — verify this is correct"
+                return (
+                    "critical",
+                    f"Revenue dropped {abs_pct:.0f}% — verify",
+                )
             if pct < -20:
                 return "warning", f"Revenue declined {abs_pct:.0f}%"
             if pct > 100:
-                return "warning", f"Revenue more than doubled (+{pct:.0f}%) — verify"
+                return (
+                    "warning",
+                    f"Revenue more than doubled (+{pct:.0f}%) — verify",
+                )
 
         # EBITDA sign flip is always suspicious
         if metric == StandardMetric.EBITDA.value:
             if previous > 0 and current < 0:
-                return "critical", "EBITDA flipped from positive to negative"
+                return (
+                    "critical",
+                    "EBITDA flipped from positive to negative",
+                )
             if previous < 0 and current > 0:
                 return "warning", "EBITDA turned positive — verify"
 
         # Cash > 50% drop
         if metric == StandardMetric.CASH.value and pct < -50:
-            return "critical", f"Cash dropped {abs_pct:.0f}% — liquidity concern"
+            return (
+                "critical",
+                f"Cash dropped {abs_pct:.0f}% — liquidity concern",
+            )
 
         # Net income sign flip
         if metric == StandardMetric.NET_INCOME.value:
@@ -306,6 +333,7 @@ class CompanyAnalysisService:
                             period=row.period,
                             value=row.value,
                             issue=issue,
+                            kind="sanity_failure",
                             severity="critical",
                             record_id=row.id,
                         )
@@ -315,14 +343,16 @@ class CompanyAnalysisService:
             if row.decision == "FLAG" and row.decision_reason:
                 reason = row.decision_reason
                 if "Hard blocked" in reason:
-                    # Extract the actual block reasons
-                    block_text = reason.replace("Hard blocked: ", "")
+                    block_text = reason.replace(
+                        "Hard blocked: ", ""
+                    )
                     anomalies.append(
                         Anomaly(
                             metric=row.metric,
                             period=row.period,
                             value=row.value,
                             issue=block_text,
+                            kind="hard_block",
                             severity="warning",
                             record_id=row.id,
                         )
@@ -342,6 +372,7 @@ class CompanyAnalysisService:
                         period=row.period,
                         value=row.value,
                         issue=f"Weak mapping: {row.mapping_reason}",
+                        kind="weak_mapping",
                         severity="warning",
                         record_id=row.id,
                     )
@@ -377,6 +408,7 @@ class CompanyAnalysisService:
                         metric=m,
                         period=latest_period,
                         reason=f"No {m} found for {latest_period}",
+                        type="absent_in_latest",
                     )
                 )
 
@@ -393,6 +425,7 @@ class CompanyAnalysisService:
                             f"{', '.join(sorted(bs_present))} "
                             f"but missing {m}"
                         ),
+                        type="partial_balance_sheet",
                     )
                 )
 
@@ -403,6 +436,7 @@ class CompanyAnalysisService:
                     metric=StandardMetric.CASH.value,
                     period=latest_period,
                     reason=f"No Cash position found for {latest_period}",
+                    type="absent_in_latest",
                 )
             )
 
@@ -411,7 +445,9 @@ class CompanyAnalysisService:
         if len(periods) >= 2:
             previous_period = periods[-2]
             prev_metrics = {
-                metric for (metric, period) in best if period == previous_period
+                metric
+                for (metric, period) in best
+                if period == previous_period
             }
             # Metrics present in previous period but absent in latest
             regressed = prev_metrics - present_metrics
@@ -424,6 +460,7 @@ class CompanyAnalysisService:
                             f"{m} was reported in {previous_period} "
                             f"but is missing from {latest_period}"
                         ),
+                        type="period_regression",
                     )
                 )
 
@@ -443,6 +480,7 @@ class CompanyAnalysisService:
         if not rows:
             return TrustAssessment(
                 overall_score=0.0,
+                label="low",
                 total_records=0,
                 approved_count=0,
                 pending_count=0,
@@ -460,18 +498,24 @@ class CompanyAnalysisService:
         rejected = sum(1 for r in rows if r.status == "REJECTED")
         flagged = sum(1 for r in rows if r.decision == "FLAG")
         low_conf = sum(
-            1 for r in rows
+            1
+            for r in rows
             if r.confidence_total is not None and r.confidence_total < 0.5
         )
-        sanity_fails = sum(1 for r in rows if r.sanity_passed == "false")
+        sanity_fails = sum(
+            1 for r in rows if r.sanity_passed == "false"
+        )
         hard_blocked = sum(
-            1 for r in rows
-            if r.decision_reason and "Hard blocked" in (r.decision_reason or "")
+            1
+            for r in rows
+            if r.decision_reason
+            and "Hard blocked" in (r.decision_reason or "")
         )
 
         # Overall score: weighted average of all confidence scores
         scores = [
-            r.confidence_total for r in rows
+            r.confidence_total
+            for r in rows
             if r.confidence_total is not None and r.status != "REJECTED"
         ]
         overall = sum(scores) / len(scores) if scores else 0.0
@@ -487,8 +531,10 @@ class CompanyAnalysisService:
                 weakest_score = conf
                 weakest_metric = f"{r.metric} ({r.period})"
 
+        overall_rounded = round(overall, 3)
         return TrustAssessment(
-            overall_score=round(overall, 3),
+            overall_score=overall_rounded,
+            label=_trust_label(overall_rounded),
             total_records=len(rows),
             approved_count=approved,
             pending_count=pending,

@@ -119,3 +119,63 @@ export interface PaginatedAudit {
   page: number;
   per_page: number;
 }
+
+// Company Analysis types
+export interface MetricComparison {
+  metric: string;
+  current_value: number;
+  current_period: string;
+  previous_value: number | null;
+  previous_period: string | null;
+  delta: number | null;
+  delta_percent: number | null;
+  severity: "normal" | "warning" | "critical";
+  explanation: string;
+}
+
+export interface AnalysisAnomaly {
+  metric: string;
+  period: string;
+  value: number;
+  issue: string;
+  kind: "sanity_failure" | "hard_block" | "weak_mapping";
+  severity: "warning" | "critical";
+  record_id: string;
+}
+
+export interface MissingItem {
+  metric: string;
+  period: string;
+  reason: string;
+  type: "absent_in_latest" | "partial_balance_sheet" | "period_regression";
+}
+
+export interface TrustAssessment {
+  overall_score: number;
+  label: "high" | "medium" | "low";
+  total_records: number;
+  approved_count: number;
+  pending_count: number;
+  rejected_count: number;
+  flagged_count: number;
+  low_confidence_count: number;
+  sanity_failures: number;
+  hard_blocked_count: number;
+  weakest_area: string;
+  weakest_score: number;
+}
+
+export interface CompanyAnalysis {
+  company_id: string;
+  periods_available: string[];
+  latest_period: string | null;
+  previous_period: string | null;
+  upload_count: number;
+  comparisons: MetricComparison[];
+  anomalies: AnalysisAnomaly[];
+  missing: MissingItem[];
+  trust: TrustAssessment;
+  comparison_warnings: number;
+  anomaly_count: number;
+  missing_count: number;
+}

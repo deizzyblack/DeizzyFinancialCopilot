@@ -1,5 +1,6 @@
 import type {
   BenchmarkingResult,
+  CompanyAnalysis,
   ExecuteResult,
   PaginatedAudit,
   PaginatedRecords,
@@ -65,6 +66,14 @@ export async function getBenchmarking(
   if (metric) params.set("metric", metric);
   if (period) params.set("period", period);
   const res = await fetch(`${BASE}/benchmarking?${params}`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function getCompanyAnalysis(
+  companyId: string,
+): Promise<CompanyAnalysis> {
+  const res = await fetch(`${BASE}/analysis/${encodeURIComponent(companyId)}`);
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }

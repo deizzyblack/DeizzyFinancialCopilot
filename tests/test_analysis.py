@@ -3,9 +3,9 @@
 Covers:
 - Company with single period (no comparison possible)
 - Company with two periods + revision
-- Missing core metrics detection
-- Anomaly surfacing (sanity failures, hard blocks, weak mappings)
-- Trust/confidence summary
+- Missing core metrics detection (with type field)
+- Anomaly surfacing with kind field (sanity_failure, hard_block, weak_mapping)
+- Trust/confidence summary with label field
 - Empty company returns None
 """
 
@@ -83,6 +83,7 @@ class TestAnalysisSinglePeriod:
 
         assert result is not None
         assert result.latest_period == "Q1-2025"
+        assert result.previous_period is None
         assert result.periods_available == ["Q1-2025"]
         # Comparisons exist but have no previous values
         for c in result.comparisons:
@@ -108,12 +109,14 @@ class TestAnalysisSinglePeriod:
         # when at least one BS metric is present)
         assert "Assets" not in missing_metrics
 
+        # All should be absent_in_latest type
+        for m in result.missing:
+            assert m.type == "absent_in_latest"
+
 
 class TestAnalysisTwoPeriods:
     def test_period_comparison(self, db_session):
-        # Q1: Revenue 1000
         _make_record(db_session, metric="Revenue", value=1000, period="Q1-2025")
-        # Q2: Revenue 750 (25% decline — past the -20% warning threshold)
         _make_record(db_session, metric="Revenue", value=750, period="Q2-2025")
         db_session.commit()
 
@@ -121,6 +124,7 @@ class TestAnalysisTwoPeriods:
         result = svc.analyze(COMPANY)
 
         assert result.latest_period == "Q2-2025"
+        assert result.previous_period == "Q1-2025"
         rev_comp = next(c for c in result.comparisons if c.metric == "Revenue")
         assert rev_comp.current_value == 750
         assert rev_comp.previous_value == 1000
@@ -153,7 +157,6 @@ class TestAnalysisTwoPeriods:
         assert "negative" in eb.explanation.lower()
 
     def test_revision_prefers_approved(self, db_session):
-        # Two records for same metric/period: PENDING v1=500, APPROVED v2=600
         _make_record(
             db_session, metric="Revenue", value=500, period="Q1-2025",
             status="PENDING", version=1,
@@ -169,11 +172,9 @@ class TestAnalysisTwoPeriods:
         result = svc.analyze(COMPANY)
 
         rev = next(c for c in result.comparisons if c.metric == "Revenue")
-        # Should use APPROVED value (600), not PENDING (500)
         assert rev.previous_value == 600
 
     def test_period_regression_detected(self, db_session):
-        # Q1 has Revenue + EBITDA, Q2 has only Revenue
         _make_record(db_session, metric="Revenue", value=1000, period="Q1-2025")
         _make_record(db_session, metric="EBITDA", value=200, period="Q1-2025")
         _make_record(db_session, metric="Revenue", value=1100, period="Q2-2025")
@@ -182,9 +183,24 @@ class TestAnalysisTwoPeriods:
         svc = CompanyAnalysisService(db_session)
         result = svc.analyze(COMPANY)
 
-        regressed = [m for m in result.missing if "was reported" in m.reason]
+        regressed = [m for m in result.missing if m.type == "period_regression"]
         assert len(regressed) == 1
         assert regressed[0].metric == "EBITDA"
+        assert "was reported" in regressed[0].reason
+
+
+class TestMissingTypes:
+    def test_partial_balance_sheet_type(self, db_session):
+        _make_record(db_session, metric="Assets", value=1000, period="Q1-2025")
+        _make_record(db_session, metric="Liabilities", value=600, period="Q1-2025")
+        db_session.commit()
+
+        svc = CompanyAnalysisService(db_session)
+        result = svc.analyze(COMPANY)
+
+        bs_missing = [m for m in result.missing if m.type == "partial_balance_sheet"]
+        assert len(bs_missing) == 1
+        assert bs_missing[0].metric == "Equity"
 
 
 class TestAnomalies:
@@ -201,8 +217,9 @@ class TestAnomalies:
         result = svc.analyze(COMPANY)
 
         assert len(result.anomalies) >= 1
-        sanity_anomaly = next(a for a in result.anomalies if a.issue == "EBITDA > Revenue")
-        assert sanity_anomaly.severity == "critical"
+        a = next(a for a in result.anomalies if a.issue == "EBITDA > Revenue")
+        assert a.severity == "critical"
+        assert a.kind == "sanity_failure"
 
     def test_hard_block_surfaced(self, db_session):
         _make_record(
@@ -215,22 +232,23 @@ class TestAnomalies:
         svc = CompanyAnalysisService(db_session)
         result = svc.analyze(COMPANY)
 
-        hard_blocks = [a for a in result.anomalies if "sanity failure" in a.issue]
+        hard_blocks = [a for a in result.anomalies if a.kind == "hard_block"]
         assert len(hard_blocks) >= 1
+        assert hard_blocks[0].severity == "warning"
 
     def test_weak_mapping_surfaced(self, db_session):
         _make_record(
             db_session, metric="Revenue", value=100, period="Q1-2025",
             mapping_method="rule_based",
             mapping_score=0.6,
-            mapping_reason="Partial match: 'Total Sales Revenue' → Revenue",
+            mapping_reason="Partial match: 'Total Sales Revenue' -> Revenue",
         )
         db_session.commit()
 
         svc = CompanyAnalysisService(db_session)
         result = svc.analyze(COMPANY)
 
-        weak = [a for a in result.anomalies if "Weak mapping" in a.issue]
+        weak = [a for a in result.anomalies if a.kind == "weak_mapping"]
         assert len(weak) == 1
         assert weak[0].severity == "warning"
 
@@ -273,17 +291,39 @@ class TestTrustAssessment:
         assert trust.approved_count == 1
         assert trust.pending_count == 1
         assert trust.rejected_count == 1
-        assert trust.low_confidence_count == 2  # 0.4 and 0.2
-        # Overall only from non-rejected: (0.9 + 0.4) / 2 = 0.65
+        assert trust.low_confidence_count == 2
         assert abs(trust.overall_score - 0.65) < 0.01
-        # Weakest should be EBITDA at 0.4 (rejected excluded from weakest)
+        assert trust.label == "medium"
         assert trust.weakest_score == 0.4
+
+    def test_high_trust_label(self, db_session):
+        _make_record(
+            db_session, metric="Revenue", value=1000, period="Q1-2025",
+            status="APPROVED", confidence_total=0.95,
+        )
+        db_session.commit()
+
+        svc = CompanyAnalysisService(db_session)
+        result = svc.analyze(COMPANY)
+        assert result.trust.label == "high"
+
+    def test_low_trust_label(self, db_session):
+        _make_record(
+            db_session, metric="Revenue", value=1000, period="Q1-2025",
+            status="PENDING", confidence_total=0.3,
+        )
+        db_session.commit()
+
+        svc = CompanyAnalysisService(db_session)
+        result = svc.analyze(COMPANY)
+        assert result.trust.label == "low"
 
     def test_empty_trust(self, db_session):
         svc = CompanyAnalysisService(db_session)
         trust = svc._assess_trust("empty-company")
         assert trust.total_records == 0
         assert trust.overall_score == 0.0
+        assert trust.label == "low"
 
     def test_flagged_counted(self, db_session):
         _make_record(
@@ -309,12 +349,26 @@ class TestAnalysisOutputSchema:
         result = svc.analyze(COMPANY)
 
         assert result.company_id == COMPANY
+        assert result.latest_period is not None
+        assert result.previous_period is None  # single period
         assert isinstance(result.periods_available, list)
         assert isinstance(result.comparisons, list)
         assert isinstance(result.anomalies, list)
         assert isinstance(result.missing, list)
         assert result.trust is not None
+        assert result.trust.label in ("high", "medium", "low")
         assert isinstance(result.upload_count, int)
         assert isinstance(result.comparison_warnings, int)
         assert isinstance(result.anomaly_count, int)
         assert isinstance(result.missing_count, int)
+
+    def test_two_period_has_previous(self, db_session):
+        _make_record(db_session, metric="Revenue", value=1000, period="Q1-2025")
+        _make_record(db_session, metric="Revenue", value=1100, period="Q2-2025")
+        db_session.commit()
+
+        svc = CompanyAnalysisService(db_session)
+        result = svc.analyze(COMPANY)
+
+        assert result.previous_period == "Q1-2025"
+        assert result.latest_period == "Q2-2025"

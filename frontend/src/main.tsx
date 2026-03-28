@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter, Link, Route, Routes, useLocation } from "react-router-dom";
 import { AuditLog } from "./pages/AuditLog";
 import { Benchmarking } from "./pages/Benchmarking";
+import { CompanyAnalysis } from "./pages/CompanyAnalysis";
 import { Dashboard } from "./pages/Dashboard";
 import { RecordDetail } from "./pages/RecordDetail";
 import { ReviewQueue } from "./pages/ReviewQueue";
@@ -31,6 +32,7 @@ function App() {
         </Link>
         <div className="nav-links">
           <NavLink to="/">Dashboard</NavLink>
+          <NavLink to="/analysis">Analysis</NavLink>
           <NavLink to="/upload">Upload</NavLink>
           <NavLink to="/review">Review</NavLink>
           <NavLink to="/benchmarking">Benchmark</NavLink>
@@ -40,6 +42,7 @@ function App() {
       <main>
         <Routes>
           <Route path="/" element={<Dashboard />} />
+          <Route path="/analysis" element={<CompanyAnalysis />} />
           <Route path="/upload" element={<UploadPage />} />
           <Route path="/review" element={<ReviewQueue />} />
           <Route path="/records/:id" element={<RecordDetail />} />
