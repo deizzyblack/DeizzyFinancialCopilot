@@ -6,7 +6,7 @@ interface Props {
 
 export function ConfidenceBar({ value, label, showValue = true }: Props) {
   const pct = Math.round(value * 100);
-  const color = value >= 0.85 ? "#22c55e" : value >= 0.5 ? "#eab308" : "#ef4444";
+  const color = value >= 0.85 ? "var(--green)" : value >= 0.5 ? "var(--amber)" : "var(--red)";
 
   return (
     <div className="confidence-bar">

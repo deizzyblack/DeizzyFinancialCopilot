@@ -27,9 +27,9 @@ function severityClass(s: string): string {
 }
 
 function kindLabel(kind: string): string {
-  if (kind === "sanity_failure") return "Sanity Failure";
-  if (kind === "hard_block") return "Hard Block";
-  if (kind === "weak_mapping") return "Weak Mapping";
+  if (kind === "sanity_failure") return "Sanity";
+  if (kind === "hard_block") return "Blocked";
+  if (kind === "weak_mapping") return "Mapping";
   return kind;
 }
 
@@ -42,64 +42,84 @@ function missingTypeLabel(type: string): string {
   return type;
 }
 
-function TrustBar({ score, label }: { score: number; label: string }) {
-  const pct = Math.round(score * 100);
-  const barClass =
-    label === "high"
-      ? "trust-bar-high"
-      : label === "medium"
-        ? "trust-bar-medium"
-        : "trust-bar-low";
+function trustLabelClass(label: string): string {
+  if (label === "high") return "trust-high";
+  if (label === "medium") return "trust-medium";
+  return "trust-low";
+}
+
+/* ── Header: executive summary strip ── */
+function AnalysisHeader({ data }: { data: CompanyAnalysisType }) {
+  const warnClass = data.comparison_warnings > 0 ? "summary-stat-warn" : "summary-stat-muted";
+  const anomClass = data.anomaly_count > 0 ? "summary-stat-crit" : "summary-stat-muted";
+  const missClass = data.missing_count > 0 ? "summary-stat-warn" : "summary-stat-muted";
+
   return (
-    <div className="trust-bar-container">
-      <div className="trust-bar-track">
-        <div
-          className={`trust-bar-fill ${barClass}`}
-          style={{ width: `${pct}%` }}
-        />
+    <header className="analysis-header">
+      <div className="analysis-header-top">
+        <span className="analysis-company">{data.company_id}</span>
+        <div className="analysis-summary-strip">
+          <span className="summary-period">{data.latest_period}</span>
+          {data.previous_period && (
+            <>
+              <span className="summary-vs">vs</span>
+              <span className="summary-period">{data.previous_period}</span>
+            </>
+          )}
+          <span className="summary-sep">|</span>
+          <span className={warnClass}>{data.comparison_warnings} warnings</span>
+          <span className="summary-sep">/</span>
+          <span className={anomClass}>{data.anomaly_count} anomalies</span>
+          <span className="summary-sep">/</span>
+          <span className={missClass}>{data.missing_count} missing</span>
+          <span className="summary-sep">|</span>
+          <span className={`summary-trust-label ${trustLabelClass(data.trust.label)}`}>
+            {data.trust.label} trust
+          </span>
+        </div>
       </div>
-      <span className="trust-bar-label">
-        {pct}% — <span className={`trust-label-${label}`}>{label}</span>
-      </span>
-    </div>
+    </header>
   );
 }
 
+/* ── Trust ── */
 function TrustSection({ trust }: { trust: TrustAssessment }) {
+  const pct = Math.round(trust.overall_score * 100);
+  const barClass = "trust-bar-" + trust.label;
+
   return (
     <section className="analysis-section">
-      <h2 className="section-title">Can I Trust This Data?</h2>
-      <TrustBar score={trust.overall_score} label={trust.label} />
-      <div className="trust-grid">
-        <div className="trust-stat">
-          <span className="trust-stat-value trust-approved">
-            {trust.approved_count}
-          </span>
-          <span className="trust-stat-label">Approved</span>
+      <h2 className="section-title">Data Trust</h2>
+      <div className="trust-bar-container">
+        <div className="trust-bar-track">
+          <div className={`trust-bar-fill ${barClass}`} style={{ width: `${pct}%` }} />
         </div>
-        <div className="trust-stat">
-          <span className="trust-stat-value trust-pending">
-            {trust.pending_count}
-          </span>
-          <span className="trust-stat-label">Pending</span>
+        <span className="trust-bar-label">
+          {pct}% &mdash; <span className={`trust-label-${trust.label}`}>{trust.label}</span>
+        </span>
+      </div>
+      <div className="trust-kv-row">
+        <div className="trust-kv">
+          <span className="trust-kv-num trust-kv-green">{trust.approved_count}</span>
+          <span className="trust-kv-label">approved</span>
         </div>
-        <div className="trust-stat">
-          <span className="trust-stat-value trust-rejected">
-            {trust.rejected_count}
-          </span>
-          <span className="trust-stat-label">Rejected</span>
+        <div className="trust-kv">
+          <span className="trust-kv-num trust-kv-muted">{trust.pending_count}</span>
+          <span className="trust-kv-label">pending</span>
         </div>
-        <div className="trust-stat">
-          <span className="trust-stat-value trust-flagged">
-            {trust.flagged_count}
-          </span>
-          <span className="trust-stat-label">Flagged</span>
+        <div className="trust-kv">
+          <span className="trust-kv-num trust-kv-red">{trust.rejected_count}</span>
+          <span className="trust-kv-label">rejected</span>
+        </div>
+        <div className="trust-kv">
+          <span className="trust-kv-num trust-kv-amber">{trust.flagged_count}</span>
+          <span className="trust-kv-label">flagged</span>
         </div>
       </div>
       <div className="trust-details">
         <div className="trust-detail-row">
           <span>Low confidence records</span>
-          <span className={trust.low_confidence_count > 0 ? "text-yellow" : ""}>
+          <span className={trust.low_confidence_count > 0 ? "text-amber" : ""}>
             {trust.low_confidence_count}
           </span>
         </div>
@@ -126,6 +146,7 @@ function TrustSection({ trust }: { trust: TrustAssessment }) {
   );
 }
 
+/* ── Comparisons ── */
 function ComparisonsSection({
   comparisons,
   hasPrevious,
@@ -138,29 +159,24 @@ function ComparisonsSection({
   if (comparisons.length === 0) {
     return (
       <section className="analysis-section">
-        <h2 className="section-title">What Changed?</h2>
+        <h2 className="section-title">Changes</h2>
         <div className="empty-state">No mapped metrics found</div>
       </section>
     );
   }
 
   const isRevision = comparisons.some(
-    (c) =>
-      c.comparison_warning?.includes("revisions within the same period"),
+    (c) => c.comparison_warning?.includes("revisions within the same period"),
   );
 
   return (
     <section className="analysis-section">
-      <h2 className="section-title">What Changed?</h2>
+      <h2 className="section-title">Changes</h2>
       {!hasPrevious && !isRevision && (
-        <div className="info-banner">
-          Only one period available — no comparison possible
-        </div>
+        <div className="info-banner">Single period &mdash; no comparison available</div>
       )}
       {isRevision && (
-        <div className="info-banner">
-          Single period with revisions — showing old vs revised values
-        </div>
+        <div className="info-banner">Revision comparison &mdash; old vs revised values</div>
       )}
       {periodTypeMismatch && comparisons[0]?.comparison_warning && (
         <div className="info-banner info-banner-warning">
@@ -173,19 +189,11 @@ function ComparisonsSection({
             <tr>
               <th>Metric</th>
               {(hasPrevious || isRevision) && (
-                <th className="num-col">
-                  {isRevision ? "Before" : "Previous"}
-                </th>
+                <th className="num-col">{isRevision ? "Before" : "Previous"}</th>
               )}
-              <th className="num-col">
-                {isRevision ? "Revised" : "Current"}
-              </th>
-              {(hasPrevious || isRevision) && (
-                <th className="num-col">Delta</th>
-              )}
-              {(hasPrevious || isRevision) && (
-                <th className="num-col">%</th>
-              )}
+              <th className="num-col">{isRevision ? "Revised" : "Current"}</th>
+              {(hasPrevious || isRevision) && <th className="num-col">Delta</th>}
+              {(hasPrevious || isRevision) && <th className="num-col">%</th>}
               {(hasPrevious || isRevision) && <th>Status</th>}
             </tr>
           </thead>
@@ -195,35 +203,27 @@ function ComparisonsSection({
                 <td className="metric-name">{c.metric}</td>
                 {(hasPrevious || isRevision) && (
                   <td className="num-col">
-                    {c.previous_value !== null
-                      ? formatNumber(c.previous_value)
-                      : "—"}
+                    {c.previous_value !== null ? formatNumber(c.previous_value) : "\u2014"}
                   </td>
                 )}
                 <td className="num-col">{formatNumber(c.current_value)}</td>
                 {(hasPrevious || isRevision) && (
                   <td className="num-col">
-                    {c.delta !== null ? formatNumber(c.delta) : "—"}
+                    {c.delta !== null ? formatNumber(c.delta) : "\u2014"}
                   </td>
                 )}
                 {(hasPrevious || isRevision) && (
                   <td className="num-col">
                     {c.delta_percent !== null
                       ? `${c.delta_percent > 0 ? "+" : ""}${c.delta_percent.toFixed(1)}%`
-                      : "—"}
+                      : "\u2014"}
                   </td>
                 )}
                 {(hasPrevious || isRevision) && (
                   <td>
-                    {c.severity === "critical" && (
-                      <span className="pill pill-critical">critical</span>
-                    )}
-                    {c.severity === "warning" && (
-                      <span className="pill pill-warning">warning</span>
-                    )}
-                    {c.severity === "normal" && (
-                      <span className="pill pill-normal">ok</span>
-                    )}
+                    <span className={`pill pill-${c.severity}`}>
+                      {c.severity === "normal" ? "ok" : c.severity}
+                    </span>
                   </td>
                 )}
               </tr>
@@ -236,12 +236,8 @@ function ComparisonsSection({
           {comparisons
             .filter((c) => c.explanation)
             .map((c) => (
-              <div
-                key={c.metric}
-                className={`explanation-row ${severityClass(c.severity)}`}
-              >
-                <span className="explanation-metric">{c.metric}:</span>{" "}
-                {c.explanation}
+              <div key={c.metric} className={`explanation-row ${severityClass(c.severity)}`}>
+                <span className="explanation-metric">{c.metric}:</span> {c.explanation}
               </div>
             ))}
         </div>
@@ -250,11 +246,8 @@ function ComparisonsSection({
   );
 }
 
-function AggregatedAnomaliesView({
-  aggregated,
-}: {
-  aggregated: AggregatedAnomaly[];
-}) {
+/* ── Anomalies ── */
+function AggregatedAnomaliesView({ aggregated }: { aggregated: AggregatedAnomaly[] }) {
   return (
     <div className="anomaly-list">
       {aggregated.map((a, i) => (
@@ -266,11 +259,10 @@ function AggregatedAnomaliesView({
           </div>
           <p className="anomaly-issue">{a.issue}</p>
           <div className="anomaly-meta">
+            <span>Metrics: {a.metrics.join(", ")}</span>
             <span>
-              Metrics: {a.metrics.join(", ")}
-            </span>
-            <span>
-              Periods: {a.periods.length > 3
+              Periods:{" "}
+              {a.periods.length > 3
                 ? `${a.periods.slice(0, 3).join(", ")} +${a.periods.length - 3}`
                 : a.periods.join(", ")}
             </span>
@@ -290,11 +282,7 @@ function AggregatedAnomaliesView({
   );
 }
 
-function DetailedAnomaliesView({
-  anomalies,
-}: {
-  anomalies: AnalysisAnomaly[];
-}) {
+function DetailedAnomaliesView({ anomalies }: { anomalies: AnalysisAnomaly[] }) {
   return (
     <div className="anomaly-list">
       {anomalies.map((a, i) => (
@@ -302,14 +290,10 @@ function DetailedAnomaliesView({
           <div className="anomaly-header">
             <span className={`pill pill-${a.severity}`}>{a.severity}</span>
             <span className="pill pill-kind">{kindLabel(a.kind)}</span>
-            <span className="anomaly-metric">
-              {a.metric} — {a.period}
-            </span>
+            <span className="anomaly-metric">{a.metric} &mdash; {a.period}</span>
           </div>
           <div className="anomaly-body">
-            <span className="anomaly-value">
-              Value: {formatNumber(a.value)}
-            </span>
+            <span className="anomaly-value">Value: {formatNumber(a.value)}</span>
             <p className="anomaly-issue">{a.issue}</p>
           </div>
           <Link to={`/records/${a.record_id}`} className="anomaly-link">
@@ -334,10 +318,8 @@ function AnomaliesSection({
   if (anomalies.length === 0) {
     return (
       <section className="analysis-section">
-        <h2 className="section-title">What Is Wrong?</h2>
-        <div className="empty-state empty-state-ok">
-          No anomalies detected
-        </div>
+        <h2 className="section-title">Anomalies</h2>
+        <div className="empty-state-ok">No anomalies detected</div>
       </section>
     );
   }
@@ -346,15 +328,11 @@ function AnomaliesSection({
     <section className="analysis-section">
       <div className="section-title-row">
         <h2 className="section-title">
-          What Is Wrong?{" "}
-          <span className="section-count">({anomalies.length})</span>
+          Anomalies <span className="section-count">{anomalies.length}</span>
         </h2>
         {isLarge && (
-          <button
-            className="toggle-view-btn"
-            onClick={() => setShowDetailed(!showDetailed)}
-          >
-            {showDetailed ? "Show grouped" : "Show all"}
+          <button className="toggle-view-btn" onClick={() => setShowDetailed(!showDetailed)}>
+            {showDetailed ? "Grouped" : "All"}
           </button>
         )}
       </div>
@@ -367,28 +345,25 @@ function AnomaliesSection({
   );
 }
 
+/* ── Missing ── */
 function MissingSection({ missing }: { missing: MissingItem[] }) {
   if (missing.length === 0) {
     return (
       <section className="analysis-section">
-        <h2 className="section-title">What Is Missing?</h2>
-        <div className="empty-state empty-state-ok">
-          All expected metrics present
-        </div>
+        <h2 className="section-title">Missing Metrics</h2>
+        <div className="empty-state-ok">All expected metrics present</div>
       </section>
     );
   }
 
   return (
     <section className="analysis-section">
-      <h2 className="section-title">What Is Missing?</h2>
+      <h2 className="section-title">Missing Metrics</h2>
       <div className="missing-list">
         {missing.map((m, i) => (
           <div key={i} className="missing-card">
             <div className="missing-header">
-              <span className="pill pill-missing-type">
-                {missingTypeLabel(m.type)}
-              </span>
+              <span className="pill pill-missing-type">{missingTypeLabel(m.type)}</span>
               <span className="missing-metric">{m.metric}</span>
               <span className="missing-period">{m.period}</span>
             </div>
@@ -400,6 +375,7 @@ function MissingSection({ missing }: { missing: MissingItem[] }) {
   );
 }
 
+/* ── Page ── */
 export function CompanyAnalysis() {
   const [searchParams, setSearchParams] = useSearchParams();
   const companyId = searchParams.get("id") || "";
@@ -424,9 +400,7 @@ export function CompanyAnalysis() {
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     const trimmed = inputValue.trim();
-    if (trimmed) {
-      setSearchParams({ id: trimmed });
-    }
+    if (trimmed) setSearchParams({ id: trimmed });
   }
 
   return (
@@ -439,9 +413,7 @@ export function CompanyAnalysis() {
           onChange={(e) => setInputValue(e.target.value)}
           className="analysis-input"
         />
-        <button type="submit" className="btn-primary">
-          Analyze
-        </button>
+        <button type="submit" className="btn-primary">Analyze</button>
       </form>
 
       {loading && (
@@ -455,7 +427,7 @@ export function CompanyAnalysis() {
         <div className="analysis-error">
           <h2>No data found</h2>
           <p>
-            No financial data found for &quot;{companyId}&quot;.{" "}
+            No financial data for &quot;{companyId}&quot;.{" "}
             <Link to="/upload">Upload a file</Link> to begin.
           </p>
         </div>
@@ -463,53 +435,7 @@ export function CompanyAnalysis() {
 
       {data && !loading && (
         <>
-          <header className="analysis-header">
-            <div className="analysis-header-title">
-              <h1>{data.company_id}</h1>
-              <div className="analysis-periods">
-                <span className="period-badge period-latest">
-                  {data.latest_period}
-                </span>
-                {data.previous_period && (
-                  <>
-                    <span className="period-arrow">vs</span>
-                    <span className="period-badge period-previous">
-                      {data.previous_period}
-                    </span>
-                  </>
-                )}
-              </div>
-            </div>
-            <div className="analysis-header-meta">
-              <span>{data.periods_available.length} periods</span>
-              <span className="meta-dot" />
-              <span>{data.upload_count} uploads</span>
-              {data.period_type_mismatch && (
-                <>
-                  <span className="meta-dot" />
-                  <span className="text-yellow">mixed period types</span>
-                </>
-              )}
-            </div>
-            <div className="analysis-header-pills">
-              <span
-                className={`header-pill ${data.comparison_warnings > 0 ? "pill-warning" : "pill-normal"}`}
-              >
-                {data.comparison_warnings} warnings
-              </span>
-              <span
-                className={`header-pill ${data.anomaly_count > 0 ? "pill-critical" : "pill-normal"}`}
-              >
-                {data.anomaly_count} anomalies
-              </span>
-              <span
-                className={`header-pill ${data.missing_count > 0 ? "pill-warning" : "pill-normal"}`}
-              >
-                {data.missing_count} missing
-              </span>
-            </div>
-          </header>
-
+          <AnalysisHeader data={data} />
           <TrustSection trust={data.trust} />
           <ComparisonsSection
             comparisons={data.comparisons}
@@ -523,12 +449,12 @@ export function CompanyAnalysis() {
           <MissingSection missing={data.missing} />
 
           <section className="analysis-section">
-            <h2 className="section-title">Upload History</h2>
-            <div className="upload-summary">
-              {data.upload_count} file{data.upload_count !== 1 ? "s" : ""}{" "}
-              uploaded across {data.periods_available.length} period
+            <h2 className="section-title">History</h2>
+            <span className="text-muted" style={{ fontSize: 12 }}>
+              {data.upload_count} file{data.upload_count !== 1 ? "s" : ""} uploaded
+              across {data.periods_available.length} period
               {data.periods_available.length !== 1 ? "s" : ""}
-            </div>
+            </span>
           </section>
         </>
       )}
@@ -537,8 +463,7 @@ export function CompanyAnalysis() {
         <div className="analysis-empty">
           <h2>Company Analysis</h2>
           <p>
-            Enter a company ID to see what changed, what is wrong, what is
-            missing, and how much you can trust the data.
+            Enter a company ID to review changes, anomalies, missing data, and trust assessment.
           </p>
         </div>
       )}

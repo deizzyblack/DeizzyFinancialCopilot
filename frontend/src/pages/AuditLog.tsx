@@ -29,11 +29,8 @@ export function AuditLog() {
 
   function updateFilter(key: string, value: string) {
     const next = new URLSearchParams(searchParams);
-    if (value) {
-      next.set(key, value);
-    } else {
-      next.delete(key);
-    }
+    if (value) next.set(key, value);
+    else next.delete(key);
     next.set("page", "1");
     setSearchParams(next);
   }
@@ -58,18 +55,17 @@ export function AuditLog() {
   return (
     <div className="page">
       <h1>Audit Trail</h1>
-      <p className="page-subtitle">Complete traceability for every data transformation</p>
 
       <div className="filter-bar">
         <input
           type="text"
-          placeholder="Filter by File ID"
+          placeholder="File ID"
           value={fileId}
           onChange={(e) => updateFilter("file_id", e.target.value)}
         />
         <input
           type="text"
-          placeholder="Filter by Record ID"
+          placeholder="Record ID"
           value={recordId}
           onChange={(e) => updateFilter("record_id", e.target.value)}
         />
@@ -98,10 +94,7 @@ export function AuditLog() {
           <div className="audit-list">
             {data.entries.map((entry) => (
               <div key={entry.id} className="audit-entry">
-                <div
-                  className="audit-row"
-                  onClick={() => toggleExpand(entry.id)}
-                >
+                <div className="audit-row" onClick={() => toggleExpand(entry.id)}>
                   <span className="audit-time">
                     {new Date(entry.timestamp).toLocaleString()}
                   </span>
@@ -117,7 +110,7 @@ export function AuditLog() {
                     )}
                   </span>
                   <span className="audit-expand">
-                    {expanded.has(entry.id) ? "[-]" : "[+]"}
+                    {expanded.has(entry.id) ? "\u25B4" : "\u25BE"}
                   </span>
                 </div>
                 {expanded.has(entry.id) && (
@@ -128,34 +121,23 @@ export function AuditLog() {
               </div>
             ))}
             {data.entries.length === 0 && (
-              <div className="card empty-state">
-                <div className="empty-state-icon">~</div>
-                <p>No audit events yet</p>
-                <p className="help-text">
-                  <Link to="/upload">Process a file</Link> to see the audit trail, or clear
-                  the filters above.
-                </p>
+              <div className="card">
+                <div className="empty-state">
+                  <p>No audit events yet.</p>
+                  <p className="help-text">
+                    <Link to="/upload">Process a file</Link> to see the audit trail.
+                  </p>
+                </div>
               </div>
             )}
           </div>
 
           <div className="pagination">
-            <span>
-              Showing {data.entries.length} of {data.total} entries
-            </span>
+            <span>{data.entries.length} of {data.total} entries</span>
             <div className="page-buttons">
-              <button disabled={page <= 1} onClick={() => setPage(page - 1)}>
-                Prev
-              </button>
-              <span>
-                Page {page} of {totalPages || 1}
-              </span>
-              <button
-                disabled={page >= totalPages}
-                onClick={() => setPage(page + 1)}
-              >
-                Next
-              </button>
+              <button disabled={page <= 1} onClick={() => setPage(page - 1)}>Prev</button>
+              <span>Page {page} / {totalPages || 1}</span>
+              <button disabled={page >= totalPages} onClick={() => setPage(page + 1)}>Next</button>
             </div>
           </div>
         </>

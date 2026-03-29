@@ -25,10 +25,7 @@ function App() {
     <BrowserRouter>
       <nav className="top-nav">
         <Link to="/" className="nav-brand">
-          <div className="nav-logo">FC</div>
-          <span className="nav-title">
-            Financial <span>Copilot</span>
-          </span>
+          Financial <span>Copilot</span>
         </Link>
         <div className="nav-links">
           <NavLink to="/">Dashboard</NavLink>

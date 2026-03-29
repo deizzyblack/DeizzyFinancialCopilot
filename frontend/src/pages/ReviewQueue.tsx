@@ -37,18 +37,17 @@ export function ReviewQueue() {
     <div className="page">
       <div className="page-header">
         <div>
-          <h1>Review Queue</h1>
-          {data && <span className="help-text">{data.total} records pending review</span>}
+          <h1 style={{ marginBottom: 2 }}>Review Queue</h1>
+          {data && (
+            <span className="help-text">{data.total} records pending</span>
+          )}
         </div>
         <div className="filter-tabs">
           {FILTERS.map((f) => (
             <button
               key={f}
               className={`tab ${filter === f ? "active" : ""}`}
-              onClick={() => {
-                setFilter(f);
-                setPage(1);
-              }}
+              onClick={() => { setFilter(f); setPage(1); }}
             >
               {FILTER_LABELS[f]}
             </button>
@@ -59,12 +58,13 @@ export function ReviewQueue() {
       {error && <div className="error-box">{error}</div>}
 
       {data && data.records.length === 0 && (
-        <div className="card empty-state">
-          <div className="empty-state-icon">~</div>
-          <p>No records to review</p>
-          <p className="help-text">
-            <Link to="/upload">Upload a file</Link> to get started, or change the filter above.
-          </p>
+        <div className="card">
+          <div className="empty-state">
+            <p>No records to review.</p>
+            <p className="help-text">
+              <Link to="/upload">Upload a file</Link> to get started, or change the filter above.
+            </p>
+          </div>
         </div>
       )}
 
@@ -88,7 +88,7 @@ export function ReviewQueue() {
                   <td>{r.company_id}</td>
                   <td>
                     <Link to={`/records/${r.record_id}`}>
-                      <span className="metric-pill">{r.metric ?? "Unknown"}</span>
+                      {r.metric ?? "Unknown"}
                     </Link>
                   </td>
                   <td className="num">{fmt(r.value)}</td>
@@ -99,7 +99,7 @@ export function ReviewQueue() {
                   <td>
                     <StatusBadge label={r.decision} />
                   </td>
-                  <td className="reason-cell">{r.reason || "-"}</td>
+                  <td className="reason-cell">{r.reason || "\u2014"}</td>
                 </tr>
               ))}
             </tbody>
@@ -107,21 +107,12 @@ export function ReviewQueue() {
 
           <div className="pagination">
             <span>
-              Showing {data.records.length} of {data.total} records
+              {data.records.length} of {data.total} records
             </span>
             <div className="page-buttons">
-              <button disabled={page <= 1} onClick={() => setPage(page - 1)}>
-                Prev
-              </button>
-              <span>
-                Page {page} of {totalPages || 1}
-              </span>
-              <button
-                disabled={page >= totalPages}
-                onClick={() => setPage(page + 1)}
-              >
-                Next
-              </button>
+              <button disabled={page <= 1} onClick={() => setPage(page - 1)}>Prev</button>
+              <span>Page {page} / {totalPages || 1}</span>
+              <button disabled={page >= totalPages} onClick={() => setPage(page + 1)}>Next</button>
             </div>
           </div>
         </>

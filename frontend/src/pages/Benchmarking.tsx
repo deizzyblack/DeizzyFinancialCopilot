@@ -25,8 +25,7 @@ export function Benchmarking() {
 
   return (
     <div className="page">
-      <h1>Portfolio Benchmarking</h1>
-      <p className="page-subtitle">Compare financial metrics across portfolio companies</p>
+      <h1>Benchmarking</h1>
 
       <div className="filter-bar">
         <select value={metric} onChange={(e) => setMetric(e.target.value)}>
@@ -46,33 +45,34 @@ export function Benchmarking() {
       {error && <div className="error-box">{error}</div>}
 
       {data && data.companies.length === 0 && (
-        <div className="card empty-state">
-          <div className="empty-state-icon">*</div>
-          <p>No approved records to compare</p>
-          <p className="help-text">
-            Approve records in the review queue to see cross-company benchmarking.
-          </p>
+        <div className="card">
+          <div className="empty-state">
+            <p>No approved records to compare.</p>
+            <p className="help-text">
+              Approve records in the review queue to see benchmarking.
+            </p>
+          </div>
         </div>
       )}
 
       {data && data.companies.length > 0 && (
         <>
-          <div className="stat-grid">
-            <div className="stat-card">
-              <span className="stat-value">{data.total_companies}</span>
-              <span className="stat-label">Companies</span>
+          <div className="stat-row" style={{ marginBottom: 16 }}>
+            <div className="stat-item">
+              <span className="stat-num">{data.total_companies}</span>
+              <span className="stat-label">companies</span>
             </div>
-            <div className="stat-card">
-              <span className="stat-value">
+            <div className="stat-item">
+              <span className="stat-num">
                 {data.companies.reduce((sum, c) => sum + c.record_count, 0)}
               </span>
-              <span className="stat-label">Approved Records</span>
+              <span className="stat-label">records</span>
             </div>
-            <div className="stat-card">
-              <span className="stat-value">
+            <div className="stat-item">
+              <span className="stat-num">
                 {new Set(data.companies.flatMap((c) => c.metrics)).size}
               </span>
-              <span className="stat-label">Unique Metrics</span>
+              <span className="stat-label">metrics</span>
             </div>
           </div>
 
@@ -91,14 +91,15 @@ export function Benchmarking() {
                 <tbody>
                   {company.records.map((r, i) => (
                     <tr key={i}>
-                      <td><span className="metric-pill">{r.metric}</span></td>
+                      <td style={{ fontWeight: 600 }}>{r.metric}</td>
                       <td className="num">{fmt(r.value)}</td>
                       <td>{r.period}</td>
                       <td>
                         <span style={{
-                          color: r.confidence >= 0.85 ? "var(--green)" : r.confidence >= 0.5 ? "var(--yellow)" : "var(--red)",
+                          color: r.confidence >= 0.85 ? "var(--green-text)" :
+                                 r.confidence >= 0.5 ? "var(--amber-text)" : "var(--red-text)",
                           fontFamily: "var(--font-mono)",
-                          fontSize: 13,
+                          fontSize: 12,
                         }}>
                           {(r.confidence * 100).toFixed(0)}%
                         </span>

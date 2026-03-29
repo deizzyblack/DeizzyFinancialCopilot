@@ -44,7 +44,7 @@ export function RecordDetail() {
     <div className="page">
       <div className="processing-indicator">
         <div className="processing-spinner" />
-        <span className="processing-text">Loading record...</span>
+        <span>Loading record...</span>
       </div>
     </div>
   );
@@ -64,7 +64,7 @@ export function RecordDetail() {
           </span>
           {rec.decision && (
             <span className="badge-group">
-              <span className="badge-label">Recommendation</span>
+              <span className="badge-label">Decision</span>
               <span className="decision-badge-outline" data-decision={rec.decision}>
                 {rec.decision.replace("_", " ")}
               </span>
@@ -73,7 +73,6 @@ export function RecordDetail() {
         </div>
       </div>
 
-      {/* Data section */}
       <div className="card">
         <h2>Financial Data</h2>
         <div className="detail-grid">
@@ -87,7 +86,9 @@ export function RecordDetail() {
           </div>
           <div className="detail-field">
             <span className="field-label">Value</span>
-            <span style={{ fontSize: 20, fontWeight: 700 }}>{fmt(rec.value)}</span>
+            <span style={{ fontSize: 18, fontWeight: 700, fontFamily: "var(--font-mono)" }}>
+              {fmt(rec.value)}
+            </span>
           </div>
           <div className="detail-field">
             <span className="field-label">Period</span>
@@ -100,13 +101,12 @@ export function RecordDetail() {
         </div>
       </div>
 
-      {/* Source traceability */}
       <div className="card">
         <h2>Source Traceability</h2>
         <div className="detail-grid">
           <div className="detail-field">
             <span className="field-label">File</span>
-            <span>{rec.source_file}</span>
+            <span style={{ fontSize: 12 }}>{rec.source_file}</span>
           </div>
           <div className="detail-field">
             <span className="field-label">Sheet</span>
@@ -118,32 +118,31 @@ export function RecordDetail() {
           </div>
           <div className="detail-field">
             <span className="field-label">Raw label</span>
-            <span className="mono">"{rec.raw_label}"</span>
+            <span className="mono">&quot;{rec.raw_label}&quot;</span>
           </div>
           <div className="detail-field">
             <span className="field-label">Mapped to</span>
             <span className="metric-pill">{rec.mapped_metric}</span>
           </div>
           <div className="detail-field">
-            <span className="field-label">Mapping method</span>
+            <span className="field-label">Method</span>
             <span>{rec.mapping_method}</span>
           </div>
           <div className="detail-field full-width">
             <span className="field-label">Mapping reason</span>
-            <span>{rec.mapping_reason}</span>
+            <span style={{ fontSize: 12 }}>{rec.mapping_reason}</span>
           </div>
           <div className="detail-field">
             <span className="field-label">Raw period</span>
-            <span className="mono">"{rec.raw_period}"</span>
+            <span className="mono">&quot;{rec.raw_period}&quot;</span>
           </div>
           <div className="detail-field">
-            <span className="field-label">Normalized to</span>
+            <span className="field-label">Normalized</span>
             <span>{rec.normalized_period} ({rec.period_type})</span>
           </div>
         </div>
       </div>
 
-      {/* Confidence breakdown */}
       <div className="card">
         <h2>Confidence Breakdown</h2>
         <div className="confidence-list">
@@ -153,12 +152,11 @@ export function RecordDetail() {
           <ConfidenceBar value={cb.source} label="Source" />
           <ConfidenceBar value={cb.historical} label="Historical" />
           <div className="confidence-total">
-            <strong>TOTAL: {rec.confidence_total.toFixed(2)}</strong>
+            TOTAL: {rec.confidence_total.toFixed(2)}
           </div>
         </div>
       </div>
 
-      {/* Sanity issues */}
       {!rec.sanity_passed && rec.sanity_issues.length > 0 && (
         <div className="card card-error">
           <h2>Sanity Issues</h2>
@@ -170,7 +168,6 @@ export function RecordDetail() {
         </div>
       )}
 
-      {/* Change detection */}
       {rec.change_type !== "NEW" && (
         <div className="card">
           <h2>Change Detection</h2>
@@ -190,8 +187,7 @@ export function RecordDetail() {
                   <span>
                     {rec.delta !== null && (
                       <>
-                        {rec.delta >= 0 ? "+" : ""}
-                        {fmt(rec.delta)}
+                        {rec.delta >= 0 ? "+" : ""}{fmt(rec.delta)}
                         {rec.delta_percent !== null && (
                           <> ({rec.delta_percent >= 0 ? "+" : ""}{rec.delta_percent}%)</>
                         )}
@@ -205,28 +201,15 @@ export function RecordDetail() {
         </div>
       )}
 
-      {/* Actions */}
       {rec.status === "PENDING" && (
         <div className="action-bar">
-          <button
-            className="btn btn-approve"
-            disabled={acting}
-            onClick={() => handleAction("APPROVE")}
-          >
+          <button className="btn-approve" disabled={acting} onClick={() => handleAction("APPROVE")}>
             Approve
           </button>
-          <button
-            className="btn btn-reject"
-            disabled={acting}
-            onClick={() => handleAction("REJECT")}
-          >
+          <button className="btn-reject" disabled={acting} onClick={() => handleAction("REJECT")}>
             Reject
           </button>
-          <button
-            className="btn btn-investigate"
-            disabled={acting}
-            onClick={() => handleAction("INVESTIGATE")}
-          >
+          <button className="btn-investigate" disabled={acting} onClick={() => handleAction("INVESTIGATE")}>
             Investigate
           </button>
         </div>

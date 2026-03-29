@@ -60,26 +60,19 @@ export function UploadPage() {
     if (!result || result.status !== "COMPLETED") return "";
     if (result.records_created === 0) return "No financial records found in this file.";
     const parts: string[] = [];
-    if (autoCount > 0) parts.push(`${autoCount} record${autoCount > 1 ? "s are" : " is"} auto-ready and awaiting approval`);
-    if (reviewCount > 0) parts.push(`${reviewCount} record${reviewCount > 1 ? "s need" : " needs"} your review`);
-    if (flagCount > 0) parts.push(`${flagCount} record${flagCount > 1 ? "s are" : " is"} flagged with issues`);
-    return parts.join(". ") + ".";
-  }
-
-  function ctaLabel(): string {
-    if (flagCount > 0) return "Review flagged records";
-    if (reviewCount > 0) return "Review records";
-    return "Review and approve records";
+    if (autoCount > 0) parts.push(`${autoCount} auto-ready`);
+    if (reviewCount > 0) parts.push(`${reviewCount} need review`);
+    if (flagCount > 0) parts.push(`${flagCount} flagged`);
+    return parts.join(", ") + ".";
   }
 
   return (
     <div className="page">
-      <h1>Upload Financial Data</h1>
-      <p className="page-subtitle">Drop an Excel file to extract and validate financial metrics</p>
+      <h1>Upload</h1>
 
       <div className="card">
         <div className="form-row">
-          <label>Company name</label>
+          <label>Company</label>
           <input
             type="text"
             value={company}
@@ -102,7 +95,6 @@ export function UploadPage() {
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}
             style={{ display: "none" }}
           />
-          <div className="upload-icon">+</div>
           {file ? (
             <>
               <div className="upload-text">{file.name}</div>
@@ -110,8 +102,8 @@ export function UploadPage() {
             </>
           ) : (
             <>
-              <div className="upload-text">Drop your Excel file here</div>
-              <div className="upload-hint">.xlsx or .xls files supported</div>
+              <div className="upload-text">Drop Excel file here or click to browse</div>
+              <div className="upload-hint">.xlsx or .xls</div>
             </>
           )}
         </div>
@@ -119,13 +111,13 @@ export function UploadPage() {
         {loading ? (
           <div className="processing-indicator">
             <div className="processing-spinner" />
-            <span className="processing-text">Processing file through pipeline...</span>
+            <span>Processing...</span>
           </div>
         ) : (
           <button
+            className="btn-primary"
             onClick={handleUpload}
             disabled={!file || !company.trim()}
-            style={{ marginTop: 16 }}
           >
             Process File
           </button>
@@ -138,63 +130,39 @@ export function UploadPage() {
         <div className="card">
           <h2>
             {result.status === "DUPLICATE"
-              ? "Duplicate file detected"
+              ? "Duplicate detected"
               : `${result.records_created} records extracted`}
           </h2>
 
           {result.status === "COMPLETED" && grouped && (
             <>
-              {/* Stat pills */}
-              <div className="stat-grid" style={{ marginBottom: 16 }}>
-                {autoCount > 0 && (
-                  <div className="stat-card" style={{ borderLeft: "3px solid var(--green)" }}>
-                    <span className="stat-value" style={{ fontSize: 24 }}>{autoCount}</span>
-                    <span className="stat-label">Auto-Ready</span>
-                  </div>
-                )}
-                {reviewCount > 0 && (
-                  <div className="stat-card" style={{ borderLeft: "3px solid var(--yellow)" }}>
-                    <span className="stat-value" style={{ fontSize: 24 }}>{reviewCount}</span>
-                    <span className="stat-label">Needs Review</span>
-                  </div>
-                )}
-                {flagCount > 0 && (
-                  <div className="stat-card" style={{ borderLeft: "3px solid var(--red)" }}>
-                    <span className="stat-value" style={{ fontSize: 24 }}>{flagCount}</span>
-                    <span className="stat-label">Flagged</span>
-                  </div>
-                )}
+              <div className="upload-summary-line">
+                {nextStepMessage()}
               </div>
 
               <div className="summary-bars">
-                {(["AUTO_READY", "REVIEW_REQUIRED", "FLAG"] as const).map(
-                  (key) => {
-                    const count = grouped[key]?.length ?? 0;
-                    if (count === 0) return null;
-                    const pct =
-                      result.records_created > 0
-                        ? Math.round((count / result.records_created) * 100)
-                        : 0;
-                    return (
-                      <div key={key} className="summary-row">
-                        <StatusBadge label={key} />
-                        <span>{count} records</span>
-                        <div className="summary-track">
-                          <div
-                            className="summary-fill"
-                            data-type={key}
-                            style={{ width: `${pct}%` }}
-                          />
-                        </div>
+                {(["AUTO_READY", "REVIEW_REQUIRED", "FLAG"] as const).map((key) => {
+                  const count = grouped[key]?.length ?? 0;
+                  if (count === 0) return null;
+                  const pct = result.records_created > 0
+                    ? Math.round((count / result.records_created) * 100) : 0;
+                  return (
+                    <div key={key} className="summary-row">
+                      <StatusBadge label={key} />
+                      <span style={{ fontSize: 12, color: "var(--text-muted)", minWidth: 60 }}>
+                        {count} records
+                      </span>
+                      <div className="summary-track">
+                        <div className="summary-fill" data-type={key} style={{ width: `${pct}%` }} />
                       </div>
-                    );
-                  },
-                )}
+                    </div>
+                  );
+                })}
               </div>
 
               {flagged.length > 0 && (
                 <div className="issues-list">
-                  <h3>Issues requiring attention:</h3>
+                  <h3>Issues</h3>
                   <ul>
                     {flagged.slice(0, 10).map((o) => (
                       <li key={o.record_id}>
@@ -203,7 +171,7 @@ export function UploadPage() {
                     ))}
                     {flagged.length > 10 && (
                       <li style={{ background: "transparent", border: "none", color: "var(--text-muted)" }}>
-                        +{flagged.length - 10} more issues
+                        +{flagged.length - 10} more
                       </li>
                     )}
                   </ul>
@@ -211,9 +179,8 @@ export function UploadPage() {
               )}
 
               <div className="next-step-box">
-                <p>{nextStepMessage()}</p>
-                <Link to="/review" className="btn">
-                  {ctaLabel()}
+                <Link to="/review" className="btn-primary" style={{ textDecoration: "none" }}>
+                  Review records
                 </Link>
               </div>
             </>
@@ -221,7 +188,7 @@ export function UploadPage() {
 
           {result.status === "DUPLICATE" && (
             <p className="help-text">
-              This file has already been processed. Upload a different file or check the{" "}
+              This file has already been processed. Check the{" "}
               <Link to="/audit">audit trail</Link> for details.
             </p>
           )}
