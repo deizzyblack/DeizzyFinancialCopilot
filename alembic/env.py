@@ -3,11 +3,15 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
+from src.core.config import settings
 from src.models.database import Base
 
 config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
+
+# Override alembic.ini URL with the env-based config
+config.set_main_option("sqlalchemy.url", settings.effective_database_url)
 
 target_metadata = Base.metadata
 

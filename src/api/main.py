@@ -42,8 +42,12 @@ app.add_middleware(
 )
 
 engine = get_engine()
-Base.metadata.create_all(engine)
 SessionFactory = get_session_factory()
+
+
+@app.on_event("startup")
+def on_startup():
+    Base.metadata.create_all(engine)
 
 
 def get_db() -> Session:

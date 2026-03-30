@@ -17,5 +17,13 @@ class Settings(BaseSettings):
 
     model_config = {"env_prefix": "FDA_"}
 
+    @property
+    def effective_database_url(self) -> str:
+        """Render gives postgres:// but SQLAlchemy 2.0 requires postgresql://"""
+        url = self.database_url
+        if url.startswith("postgres://"):
+            url = url.replace("postgres://", "postgresql://", 1)
+        return url
+
 
 settings = Settings()

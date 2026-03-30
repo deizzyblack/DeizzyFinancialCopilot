@@ -107,7 +107,7 @@ class AuditLog(Base):
 
 
 def get_engine(url: str | None = None):
-    return create_engine(url or settings.database_url)
+    return create_engine(url or settings.effective_database_url)
 
 
 def get_session_factory(url: str | None = None):
