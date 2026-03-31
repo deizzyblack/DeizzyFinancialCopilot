@@ -5,10 +5,13 @@ databases:
 
 services:
   - type: web
-    name: financial-copilot-api
+    name: financial-copilot
     runtime: python
     plan: free
-    buildCommand: pip install -r requirements.txt && mkdir -p uploads
+    buildCommand: |
+      pip install -r requirements.txt
+      cd frontend && npm install && VITE_API_URL="" npm run build && cd ..
+      mkdir -p /tmp/uploads
     startCommand: uvicorn src.api.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: FDA_DATABASE_URL
@@ -17,5 +20,7 @@ services:
           property: connectionString
       - key: PYTHON_VERSION
         value: "3.11.11"
+      - key: NODE_VERSION
+        value: "20.11.0"
       - key: FDA_UPLOAD_DIR
         value: "/tmp/uploads"
