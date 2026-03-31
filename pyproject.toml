@@ -39,6 +39,12 @@ line-length = 100
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]
 
+[project.scripts]
+app = "uvicorn src.api.main:app"
+
+[tool.fastapi]
+entrypoint = "src.api.main:app"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
